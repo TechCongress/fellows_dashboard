@@ -292,67 +292,99 @@ async function getAccomplishmentWorkbook(): Promise<{ wb: XLSX.WorkBook; buf: Bu
     { responseType: 'arraybuffer' }
   );
   _accomplishmentBuffer = Buffer.from(res.data as ArrayBuffer);
-  _accomplishmentWorkbook = XLSX.read(_accomplishmentBuffer, { type: 'buffer', cellDates: true, cellNF: false, cellHTML: false });
+  _accomplishmentWorkbook = XLSX.read(_accomplishmentBuffer, { type: 'buffer', cellDates: true, cellNF: false, cellHTML: true });
   return { wb: _accomplishmentWorkbook, buf: _accomplishmentBuffer };
 }
 
 // Extract ALL hyperlinks per cell directly from the raw xlsx XML.
 // Returns: { "G5": ["https://..."], "G6": ["https://url1", "https://url2"] }
 function extractAllHyperlinksFromXlsx(buf: Buffer, sheetName: string): Record<string, string[]> {
+  const cellToUrls: Record<string, string[]> = {};
   try {
     const zip = new AdmZip(buf);
 
-    // 1. Find the sheet's file path via workbook.xml + its rels
+    // Step 1: Find the sheet rId by iterating <sheet> elements in workbook.xml
     const workbookXml = zip.readAsText('xl/workbook.xml');
-    const workbookRels = zip.readAsText('xl/_rels/workbook.xml.rels');
-
-    // Escape special regex chars in sheet name
-    const escaped = sheetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const sheetRIdMatch = workbookXml.match(new RegExp(`<sheet[^>]+name="${escaped}"[^>]+r:id="([^"]+)"`))
-                       || workbookXml.match(new RegExp(`<sheet[^>]+r:id="([^"]+)"[^>]+name="${escaped}"`));
-    if (!sheetRIdMatch) return {};
-    const sheetRId = sheetRIdMatch[1];
-
-    const relMatch = workbookRels.match(new RegExp(`Id="${sheetRId}"[^>]+Target="([^"]+)"`))
-                  || workbookRels.match(new RegExp(`Target="([^"]+)"[^>]+Id="${sheetRId}"`));
-    if (!relMatch) return {};
-    const sheetRelPath = relMatch[1]; // e.g. "worksheets/sheet1.xml"
-    const sheetPath = `xl/${sheetRelPath}`;
-    const sheetFile = sheetRelPath.split('/').pop()!;
-    const relsPath = `xl/worksheets/_rels/${sheetFile}.rels`;
-
-    // 2. Parse rels file: rId → URL
-    const rIdToUrl: Record<string, string> = {};
-    try {
-      const relsXml = zip.readAsText(relsPath);
-      for (const m of relsXml.matchAll(/Id="([^"]+)"[^>]+Target="([^"]+)"/g)) {
-        rIdToUrl[m[1]] = m[2].replace(/&amp;/g, '&');
+    let sheetRId: string | null = null;
+    const sheetElems = workbookXml.match(/<sheet\s[^>]+\/?>/g) || [];
+    for (const el of sheetElems) {
+      const nameMatch = el.match(/name="([^"]+)"/);
+      const rIdMatch  = el.match(/r:id="([^"]+)"/);
+      if (nameMatch && rIdMatch && nameMatch[1] === sheetName) {
+        sheetRId = rIdMatch[1];
+        break;
       }
-    } catch { /* no rels file = no hyperlinks */ }
+    }
+    if (!sheetRId) {
+      console.error('[hyperlinks] sheet not found:', sheetName,
+        '| sheets in workbook:', sheetElems.map(e => e.match(/name="([^"]+)"/)?.[1]).join(', '));
+      return {};
+    }
 
-    // 3. Parse <hyperlinks> section from sheet XML: cell ref → [urls]
-    const sheetXml = zip.readAsText(sheetPath);
-    const cellToUrls: Record<string, string[]> = {};
-    const hlSection = sheetXml.match(/<hyperlinks>([\s\S]*?)<\/hyperlinks>/);
-    if (!hlSection) return {};
+    // Step 2: Find sheet file path from workbook rels
+    const workbookRels = zip.readAsText('xl/_rels/workbook.xml.rels');
+    let sheetRelPath: string | null = null;
+    const relElems = workbookRels.match(/<Relationship\s[^>]+\/?>/g) || [];
+    for (const el of relElems) {
+      const idMatch     = el.match(/Id="([^"]+)"/);
+      const targetMatch = el.match(/Target="([^"]+)"/);
+      if (idMatch && targetMatch && idMatch[1] === sheetRId) {
+        sheetRelPath = targetMatch[1];
+        break;
+      }
+    }
+    if (!sheetRelPath) {
+      console.error('[hyperlinks] rel not found for rId:', sheetRId);
+      return {};
+    }
 
-    // Attribute order varies — match either r:id/ref or ref/r:id
-    const hlRegex = /<hyperlink\s[^>]*?(?:r:id="([^"]+)"[^>]*?ref="([^"]+)"|ref="([^"]+)"[^>]*?r:id="([^"]+)")[^>]*?\/?>/g;
-    for (const m of hlSection[1].matchAll(hlRegex)) {
-      const rId     = m[1] || m[4];
-      const cellRef = m[2] || m[3];
-      const url = rIdToUrl[rId];
-      if (url && cellRef) {
+    // Normalise path (may be "worksheets/sheet1.xml" or "/xl/worksheets/sheet1.xml")
+    const sheetPath  = sheetRelPath.startsWith('/') ? sheetRelPath.slice(1) : `xl/${sheetRelPath}`;
+    const sheetFile  = sheetPath.split('/').pop()!;
+    const relsPath   = `xl/worksheets/_rels/${sheetFile}.rels`;
+
+    // Step 3: Build rId → URL from the sheet's own rels file
+    const rIdToUrl: Record<string, string> = {};
+    const relsEntry = zip.getEntry(relsPath);
+    if (!relsEntry) {
+      console.error('[hyperlinks] no rels file at:', relsPath);
+      return {};
+    }
+    const relsXml = zip.readAsText(relsPath);
+    for (const el of (relsXml.match(/<Relationship\s[^>]+\/?>/g) || [])) {
+      const idMatch     = el.match(/Id="([^"]+)"/);
+      const targetMatch = el.match(/Target="([^"]+)"/);
+      if (idMatch && targetMatch) {
+        rIdToUrl[idMatch[1]] = targetMatch[1].replace(/&amp;/g, '&');
+      }
+    }
+    console.log('[hyperlinks] rId→URL count:', Object.keys(rIdToUrl).length);
+
+    // Step 4: Parse each <hyperlink .../> element in the sheet XML
+    const sheetXml    = zip.readAsText(sheetPath);
+    const hlSection   = sheetXml.match(/<hyperlinks>([\s\S]*?)<\/hyperlinks>/);
+    if (!hlSection) {
+      console.error('[hyperlinks] no <hyperlinks> section in sheet XML for:', sheetName);
+      return {};
+    }
+    const hlElems = hlSection[1].match(/<hyperlink\s[^>]+\/?>/g) || [];
+    for (const el of hlElems) {
+      const refMatch = el.match(/ref="([^"]+)"/);
+      const ridMatch = el.match(/r:id="([^"]+)"/);
+      if (!refMatch || !ridMatch) continue;
+      const cellRef = refMatch[1];
+      const url     = rIdToUrl[ridMatch[1]];
+      if (url) {
         if (!cellToUrls[cellRef]) cellToUrls[cellRef] = [];
         cellToUrls[cellRef].push(url);
       }
     }
-
-    return cellToUrls;
+    console.log('[hyperlinks] cells with links:', Object.keys(cellToUrls).length,
+      Object.keys(cellToUrls).slice(0, 5));
   } catch (e) {
-    console.error('[extractAllHyperlinks]', e);
-    return {};
+    console.error('[hyperlinks] exception:', e);
   }
+  return cellToUrls;
 }
 
 function parseAccomplishmentSheet(
@@ -407,7 +439,20 @@ function parseAccomplishmentSheet(
       headers.forEach((h, idx) => { r[h] = String(row[idx] ?? ''); });
       const sheetRow = i + 1; // 0-indexed within data rows → 1-indexed cell row
       const cellRef  = `${descColLetter}${sheetRow + 1}`; // +1 for header row offset
-      const sourceLinks = allHyperlinks[cellRef] || [];
+
+      // Primary: XML-extracted hyperlinks (supports multiple per cell)
+      // Fallback: XLSX cell.l (single link) or HYPERLINK formula
+      let sourceLinks = allHyperlinks[cellRef] || [];
+      if (sourceLinks.length === 0 && descColIdx >= 0) {
+        const descCell = ws[XLSX.utils.encode_cell({ r: sheetRow, c: descColIdx })];
+        const cellTarget = descCell?.l?.Target || '';
+        const formulaUrl = typeof descCell?.f === 'string'
+          ? (descCell.f.match(/HYPERLINK\s*\(\s*"([^"]+)"/i)?.[1] || '')
+          : '';
+        const fallback = cellTarget || formulaUrl;
+        if (fallback) sourceLinks = [fallback];
+      }
+
       return {
         id: `${tab}-${i}`,
         cohort: r['Cohort'] || '',
