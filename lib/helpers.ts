@@ -55,7 +55,12 @@ export function calculateStreak(reports: StatusReport[], requiredMonths: string[
   const submittedOnTime = new Set(reports.filter((r) => r.submitted && !r.late).map((r) => r.month));
   const submitted = new Set(reports.filter((r) => r.submitted).map((r) => r.month));
   const today = new Date();
-  const pastMonths = requiredMonths.filter((m) => new Date(`${m} 1`) < today);
+  // Only count a month as past once it's fully over (i.e. we're in a later month)
+  const pastMonths = requiredMonths.filter((m) => {
+    const d = new Date(`${m} 1`);
+    const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return nextMonth <= today;
+  });
   let missed = 0;
   for (const m of pastMonths) { if (!submitted.has(m)) missed++; }
   let streak = 0;
