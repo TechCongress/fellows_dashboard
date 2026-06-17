@@ -356,8 +356,8 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
           </div>
           {moveDone ? (
             <div className="px-6 py-8 text-center">
-              <p className="text-green-600 font-medium text-lg">✓ Added to Alumni!</p>
-              <p className="text-sm text-gray-500 mt-1">Remember to update or remove them from the Fellows sheet.</p>
+              <p className="text-green-600 font-medium text-lg">✓ Moved to Alumni!</p>
+              <p className="text-sm text-gray-500 mt-1">Added to Alumni and removed from the Fellows sheet.</p>
               <button onClick={() => { setShowMoveModal(false); onClose(); }} className="mt-4 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700">Done</button>
             </div>
           ) : (
@@ -400,6 +400,12 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
                         served_on_hill: true,
                         currently_on_hill: false,
                       }),
+                    });
+                    // Delete the fellow row from the Google Sheet
+                    await fetch('/api/fellows', {
+                      method: 'DELETE',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: fellow.id }),
                     });
                     setMoveDone(true);
                   } finally {

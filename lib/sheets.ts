@@ -124,6 +124,36 @@ export async function createFellow(data: Partial<Fellow>): Promise<boolean> {
   return true;
 }
 
+export async function deleteFellow(id: string): Promise<boolean> {
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const rowNum = await findRowById('Fellows', id);
+  if (!rowNum) return false;
+
+  // Get the sheet ID for the "Fellows" tab
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const fellowsSheet = meta.data.sheets?.find(s => s.properties?.title === 'Fellows');
+  const sheetId = fellowsSheet?.properties?.sheetId;
+  if (sheetId == null) return false;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: 'ROWS',
+            startIndex: rowNum - 1, // 0-indexed
+            endIndex: rowNum,
+          },
+        },
+      }],
+    },
+  });
+  return true;
+}
+
 export async function fetchCheckins(fellowId?: string): Promise<Checkin[]> {
   const rows = await getSheetValues('Check-ins');
   const records = rowsToObjects(rows);
