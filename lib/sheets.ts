@@ -245,27 +245,69 @@ async function findRowById(sheetName: string, id: string): Promise<number | null
   return null;
 }
 
-export async function createAlumni(data: Partial<Alumni>): Promise<boolean> {
+function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
+  return {
+    'ID': id,
+    'Name': d.name || '',
+    'Email': d.email || '',
+    'Phone Number': d.phone || '',
+    'Cohort': d.cohort || '',
+    'Fellow Type': Array.isArray(d.fellow_types) ? d.fellow_types.join(',') : '',
+    'Party': d.party || '',
+    'Office Served': d.office_served || '',
+    'Chamber': d.chamber || '',
+    'Education': d.education || '',
+    'Prior Role': d.prior_role || '',
+    'Current Role': d.current_role || '',
+    'Served on the Hill Post-fellowship?': d.served_on_hill ? 'TRUE' : 'FALSE',
+    'Currently on the Hill?': d.currently_on_hill ? 'TRUE' : 'FALSE',
+    'Sector': d.sector || '',
+    'Location': d.location || '',
+    'Contact?': d.contact === false ? 'FALSE' : 'TRUE',
+    'LinkedIn': d.linkedin || '',
+    'Last Engaged': d.last_engaged || '',
+    'Engagement Notes': d.engagement_notes || '',
+    'Notes': d.notes || '',
+  };
+}
+
+async function getAlumniHeaders(): Promise<string[]> {
   const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: getSpreadsheetId(),
+    range: 'Alumni!1:1',
+  });
+  return (res.data.values?.[0] || []) as string[];
+}
+
+export async function createAlumni(data: Partial<Alumni>): Promise<boolean> {
   const id = newId();
+  const headers = await getAlumniHeaders();
+  const map = alumniDataMap(id, data);
+  const row = headers.map(h => map[h] ?? '');
+  const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: 'Alumni',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [alumniRowValues(id, data)] },
+    requestBody: { values: [row] },
   });
   return true;
 }
 
 export async function updateAlumni(id: string, data: Partial<Alumni>): Promise<boolean> {
+  const headers = await getAlumniHeaders();
+  const map = alumniDataMap(id, data);
+  const row = headers.map(h => map[h] ?? '');
   const sheets = await getSheetsClient();
   const rowNum = await findRowById('Alumni', id);
   if (!rowNum) return false;
+  const lastCol = String.fromCharCode(64 + headers.length); // e.g. 21 cols → U
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
-    range: `Alumni!A${rowNum}:U${rowNum}`,
+    range: `Alumni!A${rowNum}:${lastCol}${rowNum}`,
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [alumniRowValues(id, data)] },
+    requestBody: { values: [row] },
   });
   return true;
 }
