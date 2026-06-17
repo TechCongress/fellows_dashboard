@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Alumni, Accomplishment } from '@/types';
 import { parseCohortDate } from '@/lib/helpers';
-import { POLICY_TAGS, TRAFFIC_LIGHT, CONTENT_FRAMEWORK } from '@/lib/reference-data';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
