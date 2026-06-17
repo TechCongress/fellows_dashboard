@@ -85,6 +85,45 @@ export async function fetchFellows(): Promise<Fellow[]> {
   }));
 }
 
+function fellowRowValues(id: string, d: Partial<Fellow>): string[] {
+  return [
+    id,
+    d.name || '',
+    d.email || '',
+    d.congressional_email || '',
+    d.phone || '',
+    d.linkedin || '',
+    d.fellow_type || '',
+    d.party || '',
+    d.office || '',
+    d.supervisor_email || '',
+    d.chamber || '',
+    d.cohort || '',
+    d.status || 'Active',
+    d.start_date || '',
+    d.end_date || '',
+    d.last_check_in || '',
+    d.prior_role || '',
+    d.education || '',
+    d.notes || '',
+    d.requires_monthly_reports ? 'TRUE' : 'FALSE',
+    d.report_start_date || '',
+    d.report_end_month || '',
+  ];
+}
+
+export async function createFellow(data: Partial<Fellow>): Promise<boolean> {
+  const sheets = await getSheetsClient();
+  const id = newId();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: getSpreadsheetId(),
+    range: 'Fellows',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [fellowRowValues(id, data)] },
+  });
+  return true;
+}
+
 export async function fetchCheckins(fellowId?: string): Promise<Checkin[]> {
   const rows = await getSheetValues('Check-ins');
   const records = rowsToObjects(rows);

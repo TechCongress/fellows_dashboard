@@ -143,6 +143,10 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
   const [loadingReports, setLoadingReports] = useState(false);
   const [checkinsFetched, setCheckinsFetched] = useState(false);
   const [reportsFetched, setReportsFetched] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveForm, setMoveForm] = useState({ current_role: '', sector: '', location: '' });
+  const [moveSaving, setMoveSaving] = useState(false);
+  const [moveDone, setMoveDone] = useState(false);
 
   const requiredMonths = useMemo(() => getRequiredReportMonths(fellow), [fellow]);
   const streakInfo = useMemo(() => calculateStreak(reports, requiredMonths), [reports, requiredMonths]);
@@ -176,6 +180,7 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
   ];
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex-shrink-0">
@@ -335,11 +340,81 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="w-full py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Close</button>
+        <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex gap-2">
+          <button onClick={() => setShowMoveModal(true)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Move to Alumni</button>
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm hover:bg-gray-700 transition-colors">Close</button>
         </div>
       </div>
     </div>
+
+    {showMoveModal && (
+      <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Move {fellow.name} to Alumni</h3>
+            <button onClick={() => setShowMoveModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          </div>
+          {moveDone ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-green-600 font-medium text-lg">✓ Added to Alumni!</p>
+              <p className="text-sm text-gray-500 mt-1">Remember to update or remove them from the Fellows sheet.</p>
+              <button onClick={() => { setShowMoveModal(false); onClose(); }} className="mt-4 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700">Done</button>
+            </div>
+          ) : (
+            <>
+              <div className="px-6 py-4 space-y-3">
+                <p className="text-xs text-gray-500">Pre-filled from fellow record. Add any additional info below.</p>
+                {([['Current Role', 'current_role'], ['Sector', 'sector'], ['Location', 'location']] as [string, keyof typeof moveForm][]).map(([label, field]) => (
+                  <div key={field}>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                    <input type="text" value={moveForm[field]} onChange={e => setMoveForm(f => ({ ...f, [field]: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                  </div>
+                ))}
+              </div>
+              <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+                <button onClick={() => setShowMoveModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+                <button disabled={moveSaving} onClick={async () => {
+                  setMoveSaving(true);
+                  try {
+                    await fetch('/api/alumni', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: fellow.name,
+                        email: fellow.email,
+                        phone: fellow.phone,
+                        linkedin: fellow.linkedin,
+                        cohort: fellow.cohort,
+                        fellow_types: [fellow.fellow_type],
+                        office_served: fellow.office,
+                        chamber: fellow.chamber,
+                        party: fellow.party,
+                        education: fellow.education,
+                        prior_role: fellow.prior_role,
+                        notes: fellow.notes,
+                        current_role: moveForm.current_role,
+                        sector: moveForm.sector,
+                        location: moveForm.location,
+                        contact: true,
+                        served_on_hill: true,
+                        currently_on_hill: false,
+                      }),
+                    });
+                    setMoveDone(true);
+                  } finally {
+                    setMoveSaving(false);
+                  }
+                }} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-medium">
+                  {moveSaving ? 'Saving…' : 'Confirm'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -356,6 +431,9 @@ export default function FellowsPage() {
   const [fellows, setFellows] = useState<Fellow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFellow, setSelectedFellow] = useState<Fellow | null>(null);
+  const [showAddFellow, setShowAddFellow] = useState(false);
+  const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
+  const [addFellowSaving, setAddFellowSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Active');
   const [typeFilter, setTypeFilter] = useState('All Types');
@@ -442,7 +520,10 @@ export default function FellowsPage() {
             ))}
           </nav>
         </div>
-        <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">Log out</button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowAddFellow(true)} className="text-sm bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors font-medium">+ Add Fellow</button>
+          <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-900 transition-colors">Log out</button>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -504,6 +585,74 @@ export default function FellowsPage() {
       </main>
 
       {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)} />}
+
+      {showAddFellow && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Add New Fellow</h2>
+              <button onClick={() => setShowAddFellow(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+            <div className="px-6 py-4 grid grid-cols-2 gap-4">
+              {([
+                ['Name', 'name', 'text'],
+                ['Email', 'email', 'text'],
+                ['Congressional Email', 'congressional_email', 'text'],
+                ['Phone', 'phone', 'text'],
+                ['LinkedIn', 'linkedin', 'text'],
+                ['Office', 'office', 'text'],
+                ['Cohort', 'cohort', 'text'],
+                ['Start Date', 'start_date', 'text'],
+                ['End Date', 'end_date', 'text'],
+                ['Prior Role', 'prior_role', 'text'],
+                ['Education', 'education', 'text'],
+              ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                  <input type={type} value={(addFellowForm[field] as string) || ''} onChange={e => setAddFellowForm(f => ({ ...f, [field]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </div>
+              ))}
+              {([
+                ['Fellow Type', 'fellow_type', ['CIF', 'Senior CIF', 'AI Security Fellow']],
+                ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
+                ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
+                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew']],
+              ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                  <select value={(addFellowForm[field] as string) || ''} onChange={e => setAddFellowForm(f => ({ ...f, [field]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+                    {options.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                <textarea value={addFellowForm.notes || ''} onChange={e => setAddFellowForm(f => ({ ...f, notes: e.target.value }))} rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setShowAddFellow(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+              <button disabled={addFellowSaving || !addFellowForm.name} onClick={async () => {
+                setAddFellowSaving(true);
+                try {
+                  await fetch('/api/fellows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addFellowForm) });
+                  setShowAddFellow(false);
+                  setAddFellowForm({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
+                  const res = await fetch('/api/fellows');
+                  setFellows(await res.json());
+                } finally {
+                  setAddFellowSaving(false);
+                }
+              }} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-medium">
+                {addFellowSaving ? 'Saving…' : 'Add Fellow'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
