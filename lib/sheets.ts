@@ -21,7 +21,7 @@ function getAuth() {
       token_uri: process.env.GCP_TOKEN_URI,
       auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_CERT_URL,
       client_x509_cert_url: process.env.GCP_CLIENT_CERT_URL,
-    },
+    } as any,
     scopes: SCOPES,
   });
 }
