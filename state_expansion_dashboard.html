@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TechCongress State Expansion Dashboard</title>
+<style>
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --border: #e2e6ea;
+    --text: #1a1d23;
+    --text-muted: #6b7280;
+    --blue: #1d4ed8;
+    --blue-light: #dbeafe;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --yellow: #ca8a04;
+    --yellow-light: #fef9c3;
+    --orange: #ea580c;
+    --orange-light: #ffedd5;
+    --purple: #7c3aed;
+    --purple-light: #ede9fe;
+    --gray: #6b7280;
+    --gray-light: #f3f4f6;
+    --red: #dc2626;
+    --red-light: #fee2e2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  /* HEADER */
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--blue); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 13px; }
+  .logo-text { font-weight: 700; font-size: 16px; }
+  .logo-sub { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .header-meta { font-size: 12px; color: var(--text-muted); }
+
+  /* LAYOUT */
+  .main { display: grid; grid-template-columns: 1fr 360px; gap: 0; height: calc(100vh - 65px); overflow: hidden; }
+  .left-panel { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .right-panel { border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+
+  /* SCORECARD */
+  .scorecard { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .score-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: center; }
+  .score-card .num { font-size: 28px; font-weight: 800; line-height: 1; }
+  .score-card .label { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .score-card .sub { font-size: 11px; margin-top: 3px; }
+
+  /* STAGE BADGE */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge-prospecting { background: var(--gray-light); color: var(--gray); }
+  .badge-relationship { background: var(--blue-light); color: var(--blue); }
+  .badge-funding { background: var(--yellow-light); color: var(--yellow); }
+  .badge-placing { background: var(--orange-light); color: var(--orange); }
+  .badge-active { background: var(--green-light); color: var(--green); }
+  .badge-sustaining { background: var(--purple-light); color: var(--purple); }
+
+  /* PIPELINE */
+  .pipeline { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .pipeline-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .pipeline-header h3 { font-size: 13px; font-weight: 700; }
+  .pipeline-stages { display: grid; grid-template-columns: repeat(6, 1fr); }
+  .stage-col { border-right: 1px solid var(--border); min-height: 120px; }
+  .stage-col:last-child { border-right: none; }
+  .stage-head { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; display: flex; flex-direction: column; gap: 2px; }
+  .stage-count { font-size: 18px; font-weight: 800; }
+  .stage-states { padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .state-chip { padding: 4px 8px; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity .15s; border: 1px solid transparent; }
+  .state-chip:hover { opacity: .75; }
+  .state-chip.selected { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-light); }
+
+  /* US MAP */
+  .map-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .map-container h3 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+  .map-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  #us-map { width: 100%; }
+
+  /* TABLE */
+  .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .table-header-row { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .table-header-row h3 { font-size: 13px; font-weight: 700; }
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-btn { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: white; font-size: 12px; cursor: pointer; transition: all .15s; }
+  .filter-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 8px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--gray-light); }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: var(--gray-light); }
+  tr.selected-row td { background: var(--blue-light); }
+
+  /* RIGHT PANEL */
+  .detail-empty { padding: 40px 24px; text-align: center; color: var(--text-muted); }
+  .detail-empty .icon { font-size: 32px; margin-bottom: 8px; }
+  .detail-header { padding: 20px; border-bottom: 1px solid var(--border); }
+  .detail-header h2 { font-size: 18px; font-weight: 800; }
+  .detail-header .region { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .detail-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .detail-section h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 10px; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 8px; font-size: 13px; }
+  .kv .k { color: var(--text-muted); }
+  .kv .v { font-weight: 500; }
+  .fellow-card { background: var(--gray-light); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+  .fellow-card .name { font-weight: 600; font-size: 13px; }
+  .fellow-card .role { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .funder-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .funder-row:last-child { border-bottom: none; }
+  .funder-amount { font-weight: 600; color: var(--green); }
+  .milestone { display: flex; gap: 10px; padding: 6px 0; }
+  .milestone-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; flex-shrink: 0; }
+  .milestone-text { font-size: 12px; }
+  .milestone-date { font-size: 11px; color: var(--text-muted); }
+  .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; margin-top: 6px; }
+  .progress-bar { height: 6px; border-radius: 99px; background: var(--blue); }
+
+  /* PACE */
+  .pace-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 4px 0; }
+  .pace-label { width: 40px; color: var(--text-muted); font-size: 12px; }
+  .pace-bar-wrap { flex: 1; background: var(--border); border-radius: 99px; height: 8px; }
+  .pace-bar { height: 8px; border-radius: 99px; }
+  .pace-num { width: 24px; text-align: right; font-weight: 700; font-size: 12px; }
+  .pace-target { color: var(--text-muted); font-size: 11px; }
+
+  section.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card h3 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">TC</div>
+    <div>
+      <div class="logo-text">TechCongress</div>
+      <div class="logo-sub">State Expansion — VP Dashboard</div>
+    </div>
+  </div>
+  <div class="header-meta">Last updated: June 25, 2026 &nbsp;·&nbsp; 5-Year Goal: 50 states by 2031</div>
+</header>
+
+<div class="main">
+  <div class="left-panel">
+
+    <!-- SCORECARD -->
+    <div class="scorecard">
+      <div class="score-card">
+        <div class="num" style="color:var(--green)">8</div>
+        <div class="label">Active Programs</div>
+        <div class="sub" style="color:var(--green)">▲ 3 vs. last yr</div>
+      </div>
+      <div class="score-card">
+        <div class="num" style="color:var(--purple)">3</div>
+        <div class="label">Self-Sustaining</div>
+        <div class="sub" style="color:var(--purple)">Model programs</div>
+      </div>
+      <div class="score-card">
+        <div class="num" style="color:var(--blue)">14</div>
+        <div class="label">In Pipeline</div>
+        <div class="sub" style="color:var(--text-muted)">Rel. + Funding</div>
+      </div>
+      <div class="score-card">
+        <div class="num" style="color:var(--text-muted)">25</div>
+        <div class="label">Not Started</div>
+        <div class="sub" style="color:var(--text-muted)">Prospecting</div>
+      </div>
+      <div class="score-card">
+        <div class="num" style="color:var(--orange)">47%</div>
+        <div class="label">Pace to Goal</div>
+        <div class="sub" style="color:var(--text-muted)">Yr 1 of 5</div>
+      </div>
+    </div>
+
+    <!-- 5-YEAR PACE -->
+    <section class="card">
+      <h3>5-Year Pacing (Target: 10 new active states/year)</h3>
+      <div id="pace-chart"></div>
+    </section>
+
+    <!-- PIPELINE VIEW -->
+    <div class="pipeline">
+      <div class="pipeline-header">
+        <h3>State Pipeline</h3>
+        <span style="font-size:12px;color:var(--text-muted)">Click a state to see details →</span>
+      </div>
+      <div class="pipeline-stages" id="pipeline-stages"></div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-container">
+      <div class="table-header-row">
+        <h3>All States</h3>
+        <div class="filter-row" id="filter-row"></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Stage</th>
+            <th>Region</th>
+            <th>Lead Contact</th>
+            <th>Funding</th>
+            <th>Fellow(s)</th>
+          </tr>
+        </thead>
+        <tbody id="state-table-body"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- RIGHT DETAIL PANEL -->
+  <div class="right-panel" id="right-panel">
+    <div class="detail-empty">
+      <div class="icon">🗺️</div>
+      <div style="font-weight:600;margin-bottom:4px">Select a state</div>
+      <div style="font-size:12px">Click any state in the pipeline or table to see details, contacts, funding, and fellows.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DATA ───────────────────────────────────────────────────────────────────
+
+const STAGES = [
+  { id: 'prospecting',   label: 'Prospecting',     color: '#6b7280' },
+  { id: 'relationship',  label: 'Relationship',     color: '#1d4ed8' },
+  { id: 'funding',       label: 'Funding',          color: '#ca8a04' },
+  { id: 'placing',       label: 'Placing Fellow',   color: '#ea580c' },
+  { id: 'active',        label: 'Active',           color: '#16a34a' },
+  { id: 'sustaining',    label: 'Self-Sustaining',  color: '#7c3aed' },
+];
+
+const STATES = [
+  // ACTIVE (8)
+  { name: 'California',    abbr: 'CA', region: 'West',        stage: 'active',        contact: 'Rep. Diana Chu',      funding: '$280,000', funded: true,  fellows: ['Priya Nair (Placed 2025)', 'Marcus Webb (Placed 2026)'],  funders: [{name:'Schmidt Futures', amt:'$150k'},{name:'Omidyar Network',amt:'$80k'},{name:'State Match',amt:'$50k'}], milestones: [{done:true,text:'MOU signed with CA Legislature',date:'Mar 2025'},{done:true,text:'Pilot fellow placed – AI policy',date:'Aug 2025'},{done:true,text:'Second fellow placed – cybersecurity',date:'Jan 2026'},{done:false,text:'Program review & renewal',date:'Dec 2026'}] },
+  { name: 'Colorado',      abbr: 'CO', region: 'Mountain',    stage: 'active',        contact: 'Sen. Marcia Flores',  funding: '$120,000', funded: true,  fellows: ['Jordan Ellis (Placed 2026)'],   funders: [{name:'Gates Family Foundation',amt:'$75k'},{name:'Denver Tech Fund',amt:'$45k'}], milestones: [{done:true,text:'Partnership with CU Boulder',date:'Jan 2025'},{done:true,text:'Fellow placed',date:'Feb 2026'},{done:false,text:'Annual review',date:'Aug 2026'}] },
+  { name: 'Illinois',      abbr: 'IL', region: 'Midwest',     stage: 'active',        contact: 'Rep. Kwame Johnson',  funding: '$145,000', funded: true,  fellows: ['Sofia Reyes (Placed 2025)'],    funders: [{name:'MacArthur Foundation',amt:'$100k'},{name:'Chicago Tech Assoc.',amt:'$45k'}], milestones: [{done:true,text:'State partner onboarded',date:'Apr 2025'},{done:true,text:'Fellow placed',date:'Sep 2025'},{done:false,text:'Host expansion to 2nd chamber',date:'Oct 2026'}] },
+  { name: 'Massachusetts', abbr: 'MA', region: 'Northeast',   stage: 'active',        contact: 'Sen. Peter Kim',      funding: '$160,000', funded: true,  fellows: ['Aaliyah Brooks (Placed 2025)'], funders: [{name:'Simons Foundation',amt:'$100k'},{name:'Boston Foundation',amt:'$60k'}], milestones: [{done:true,text:'MOU with MA Legislature',date:'Feb 2025'},{done:true,text:'Fellow placed',date:'Sep 2025'},{done:false,text:'Program showcase event',date:'Nov 2026'}] },
+  { name: 'Texas',         abbr: 'TX', region: 'South',       stage: 'active',        contact: 'Rep. Carlos Vega',    funding: '$200,000', funded: true,  fellows: ['Dmitri Osei (Placed 2025)', 'Hannah Liu (Placed 2026)'], funders: [{name:'Dell Technologies',amt:'$100k'},{name:'Moody Foundation',amt:'$60k'},{name:'State Grant',amt:'$40k'}], milestones: [{done:true,text:'TX Legislature partnership',date:'Jun 2025'},{done:true,text:'First fellow placed',date:'Nov 2025'},{done:true,text:'Second fellow secured',date:'Mar 2026'},{done:false,text:'Statewide tech summit',date:'Sep 2026'}] },
+  { name: 'Virginia',      abbr: 'VA', region: 'South',       stage: 'active',        contact: 'Del. Aisha Patel',    funding: '$110,000', funded: true,  fellows: ['Theo Grant (Placed 2026)'],     funders: [{name:'Dominion Energy Found.',amt:'$60k'},{name:'Amazon Impact',amt:'$50k'}], milestones: [{done:true,text:'Partner org identified',date:'Jul 2025'},{done:true,text:'Fellow placed',date:'Jan 2026'},{done:false,text:'Recruitment for Yr 2',date:'Aug 2026'}] },
+  { name: 'Washington',    abbr: 'WA', region: 'West',        stage: 'active',        contact: 'Rep. Lin Nakamura',   funding: '$130,000', funded: true,  fellows: ['Camille Dupont (Placed 2026)'], funders: [{name:'Microsoft Philanthropies',amt:'$90k'},{name:'WA Tech Alliance',amt:'$40k'}], milestones: [{done:true,text:'MOU signed',date:'Sep 2025'},{done:true,text:'Fellow placed',date:'Mar 2026'},{done:false,text:'First midpoint review',date:'Sep 2026'}] },
+  { name: 'Michigan',      abbr: 'MI', region: 'Midwest',     stage: 'active',        contact: 'Rep. Darnell Watts',  funding: '$105,000', funded: true,  fellows: ['Yuki Tanaka (Placed 2026)'],    funders: [{name:'Ford Foundation',amt:'$65k'},{name:'MI econ Council',amt:'$40k'}], milestones: [{done:true,text:'Legislature host confirmed',date:'Oct 2025'},{done:true,text:'Fellow placed',date:'Apr 2026'},{done:false,text:'Semester review',date:'Oct 2026'}] },
+
+  // SELF-SUSTAINING (3)
+  { name: 'New York',      abbr: 'NY', region: 'Northeast',   stage: 'sustaining',    contact: 'Sen. Rachel Goldstein', funding: '$300,000', funded: true, fellows: ['Omar Diallo (Alumni)', 'Carmen Solis (Alumni)', 'Jake Whitfield (Current)'], funders: [{name:'NYC Tech Alliance',amt:'$150k'},{name:'Bloomberg Philanthropies',amt:'$100k'},{name:'State Appropriation',amt:'$50k'}], milestones: [{done:true,text:'Program launched',date:'2023'},{done:true,text:'State funding secured',date:'2024'},{done:true,text:'Self-sustaining threshold met',date:'Jan 2026'},{done:false,text:'National model documentation',date:'Sep 2026'}] },
+  { name: 'Oregon',        abbr: 'OR', region: 'West',        stage: 'sustaining',    contact: 'Rep. Tamsin Wright',  funding: '$190,000', funded: true,  fellows: ['Nadia Chen (Alumni)', 'Rafael Torres (Current)'], funders: [{name:'OR Community Found.',amt:'$100k'},{name:'Intel Community',amt:'$90k'}], milestones: [{done:true,text:'Program launched',date:'2022'},{done:true,text:'Alumni network established',date:'2024'},{done:true,text:'Self-sustaining status',date:'2025'},{done:false,text:'Expand to 2 fellows/year',date:'2027'}] },
+  { name: 'Minnesota',     abbr: 'MN', region: 'Midwest',     stage: 'sustaining',    contact: 'Sen. Brianna Larsen', funding: '$175,000', funded: true,  fellows: ['David Park (Alumni)', 'Imani Scott (Current)'], funders: [{name:'Mayo Clinic Found.',amt:'$75k'},{name:'Best Buy Philanthropy',amt:'$60k'},{name:'State Match',amt:'$40k'}], milestones: [{done:true,text:'Program launched',date:'2023'},{done:true,text:'University partnership',date:'2024'},{done:true,text:'Sustained',date:'Oct 2025'},{done:false,text:'Regional cohort pilot',date:'2027'}] },
+
+  // PLACING (2)
+  { name: 'Georgia',       abbr: 'GA', region: 'South',       stage: 'placing',       contact: 'Rep. DeShawn Morris', funding: '$95,000',  funded: true,  fellows: ['Recruiting now'],             funders: [{name:'Coca-Cola Foundation',amt:'$60k'},{name:'Atlanta Tech Village',amt:'$35k'}], milestones: [{done:true,text:'MOU signed',date:'Mar 2026'},{done:true,text:'Funding secured',date:'May 2026'},{done:false,text:'Fellow selected',date:'Aug 2026'},{done:false,text:'Fellow start date',date:'Sep 2026'}] },
+  { name: 'Arizona',       abbr: 'AZ', region: 'Mountain',    stage: 'placing',       contact: 'Sen. Lucia Romero',   funding: '$85,000',  funded: true,  fellows: ['Finalist interviews in progress'], funders: [{name:'AZ Community Found.',amt:'$85k'}], milestones: [{done:true,text:'Partner confirmed',date:'Jan 2026'},{done:true,text:'Funding closed',date:'Apr 2026'},{done:false,text:'Fellow selection',date:'Jul 2026'},{done:false,text:'Program start',date:'Sep 2026'}] },
+
+  // FUNDING (6)
+  { name: 'North Carolina',abbr: 'NC', region: 'South',       stage: 'funding',       contact: 'Sen. Elaine Howell',  funding: '$40,000',  funded: false, fellows: [], funders: [{name:'Biogen NC',amt:'$40k (pledged)'},{name:'Research Triangle Found.',amt:'Discussing $50k'}], milestones: [{done:true,text:'Key contacts identified',date:'2025'},{done:true,text:'Pilot funder committed',date:'May 2026'},{done:false,text:'Full funding close',date:'Sep 2026'},{done:false,text:'Fellow placed',date:'Jan 2027'}] },
+  { name: 'Ohio',          abbr: 'OH', region: 'Midwest',     stage: 'funding',       contact: 'Rep. Ben Chukwu',     funding: '$30,000',  funded: false, fellows: [], funders: [{name:'Battelle Memorial',amt:'$30k (committed)'},{name:'Ohio State Found.',amt:'Discussing $40k'}], milestones: [{done:true,text:'Legislature champion identified',date:'Mar 2026'},{done:true,text:'Anchor funder in',date:'Jun 2026'},{done:false,text:'Funding goal met',date:'Oct 2026'}] },
+  { name: 'Pennsylvania',  abbr: 'PA', region: 'Northeast',   stage: 'funding',       contact: 'Rep. Sasha Kim',      funding: '$25,000',  funded: false, fellows: [], funders: [{name:'Heinz Endowments',amt:'$25k (committed)'},{name:'Philly Tech Council',amt:'Exploring'}], milestones: [{done:true,text:'Program intro meeting',date:'Apr 2026'},{done:true,text:'Anchor funder',date:'Jun 2026'},{done:false,text:'Close funding',date:'Nov 2026'}] },
+  { name: 'Nevada',        abbr: 'NV', region: 'West',        stage: 'funding',       contact: 'Sen. Marco Valdez',   funding: '$20,000',  funded: false, fellows: [], funders: [{name:'Switch Community',amt:'$20k (committed)'},{name:'NV Gaming Found.',amt:'Exploring'}], milestones: [{done:true,text:'State contacts made',date:'Jan 2026'},{done:true,text:'Anchor funder',date:'May 2026'},{done:false,text:'Close funding',date:'Oct 2026'}] },
+  { name: 'Wisconsin',     abbr: 'WI', region: 'Midwest',     stage: 'funding',       contact: 'Rep. Clara Nystrom',  funding: '$15,000',  funded: false, fellows: [], funders: [{name:'WI Alumni Research',amt:'$15k (pledge)'},{name:'Northwestern Mutual',amt:'Discussing'}], milestones: [{done:true,text:'Introduction to Legislature',date:'Feb 2026'},{done:false,text:'Funding close',date:'Dec 2026'}] },
+  { name: 'Tennessee',     abbr: 'TN', region: 'South',       stage: 'funding',       contact: 'Sen. Hank Dubois',    funding: '$10,000',  funded: false, fellows: [], funders: [{name:'FedEx Institute',amt:'$10k (soft)'},{name:'TN Tech Council',amt:'Exploring'}], milestones: [{done:true,text:'Champion legislator identified',date:'May 2026'},{done:false,text:'Funding campaign launch',date:'Sep 2026'}] },
+
+  // RELATIONSHIP BUILDING (8)
+  { name: 'New Jersey',    abbr: 'NJ', region: 'Northeast',   stage: 'relationship',  contact: 'Rep. Fatima Okonkwo', funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Intro meeting w/ Legislature',date:'Apr 2026'},{done:false,text:'MOU discussion',date:'Sep 2026'}] },
+  { name: 'Maryland',      abbr: 'MD', region: 'South',       stage: 'relationship',  contact: 'Sen. David Cheng',    funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Initial outreach',date:'Mar 2026'},{done:false,text:'Partner meeting',date:'Aug 2026'}] },
+  { name: 'Missouri',      abbr: 'MO', region: 'Midwest',     stage: 'relationship',  contact: 'Rep. Tamara Bell',    funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Referral from CO network',date:'May 2026'},{done:false,text:'Stakeholder meeting',date:'Sep 2026'}] },
+  { name: 'Indiana',       abbr: 'IN', region: 'Midwest',     stage: 'relationship',  contact: 'Rep. Owen Carroll',   funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Exploratory call',date:'Jun 2026'},{done:false,text:'Site visit',date:'Oct 2026'}] },
+  { name: 'Utah',          abbr: 'UT', region: 'Mountain',    stage: 'relationship',  contact: 'Sen. Lily Hatch',     funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Intro meeting',date:'May 2026'},{done:false,text:'MOU scoping',date:'Nov 2026'}] },
+  { name: 'Connecticut',   abbr: 'CT', region: 'Northeast',   stage: 'relationship',  contact: 'Rep. James Monroe',   funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Partner call',date:'Jun 2026'},{done:false,text:'Formal proposal',date:'Oct 2026'}] },
+  { name: 'Iowa',          abbr: 'IA', region: 'Midwest',     stage: 'relationship',  contact: 'Sen. Amy Sorensen',   funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Intro via TechCongress alumni',date:'May 2026'},{done:false,text:'Legislature tour',date:'Sep 2026'}] },
+  { name: 'Kansas',        abbr: 'KS', region: 'Midwest',     stage: 'relationship',  contact: 'Rep. Miguel Santos',  funding: '—',        funded: false, fellows: [], funders: [], milestones: [{done:true,text:'Cold outreach responded',date:'Apr 2026'},{done:false,text:'In-person visit',date:'Oct 2026'}] },
+
+  // PROSPECTING (remaining ~25 states, abbreviated)
+  ...[
+    ['Alabama','AL','South'],['Alaska','AK','West'],['Arkansas','AR','South'],
+    ['Delaware','DE','Northeast'],['Florida','FL','South'],['Hawaii','HI','West'],
+    ['Idaho','ID','Mountain'],['Kentucky','KY','South'],['Louisiana','LA','South'],
+    ['Maine','ME','Northeast'],['Mississippi','MS','South'],['Montana','MT','Mountain'],
+    ['Nebraska','NE','Midwest'],['New Hampshire','NH','Northeast'],['New Mexico','NM','Mountain'],
+    ['North Dakota','ND','Midwest'],['Oklahoma','OK','South'],['Rhode Island','RI','Northeast'],
+    ['South Carolina','SC','South'],['South Dakota','SD','Midwest'],['Vermont','VT','Northeast'],
+    ['West Virginia','WV','South'],['Wyoming','WY','Mountain'],['New Mexico','NM','Mountain'],
+    ['Mississippi','MS','South']
+  ].filter((v,i,a) => a.findIndex(t=>t[1]===v[1])===i)
+   .map(([name, abbr, region]) => ({
+    name, abbr, region, stage: 'prospecting',
+    contact: '—', funding: '—', funded: false, fellows: [],
+    funders: [], milestones: []
+  }))
+];
+
+// deduplicate
+const seen = new Set();
+const DATA = STATES.filter(s => { if(seen.has(s.abbr)) return false; seen.add(s.abbr); return true; });
+
+// ─── RENDER PIPELINE ────────────────────────────────────────────────────────
+function renderPipeline() {
+  const container = document.getElementById('pipeline-stages');
+  container.innerHTML = '';
+  STAGES.forEach(stage => {
+    const states = DATA.filter(s => s.stage === stage.id);
+    const col = document.createElement('div');
+    col.className = 'stage-col';
+    col.innerHTML = `
+      <div class="stage-head" style="color:${stage.color}">
+        <span class="stage-count">${states.length}</span>
+        <span style="font-size:11px">${stage.label}</span>
+      </div>
+      <div class="stage-states">
+        ${states.map(s => `<div class="state-chip badge-${stage.id}" data-abbr="${s.abbr}" onclick="selectState('${s.abbr}')">${s.name}</div>`).join('')}
+      </div>
+    `;
+    container.appendChild(col);
+  });
+}
+
+// ─── RENDER TABLE ────────────────────────────────────────────────────────────
+let activeFilter = 'all';
+function renderTable() {
+  const body = document.getElementById('state-table-body');
+  const filtered = activeFilter === 'all' ? DATA : DATA.filter(s => s.stage === activeFilter);
+  body.innerHTML = filtered.map(s => {
+    const stageInfo = STAGES.find(st => st.id === s.stage);
+    return `<tr class="clickable" data-abbr="${s.abbr}" onclick="selectState('${s.abbr}')">
+      <td><strong>${s.name}</strong> <span style="color:var(--text-muted);font-size:11px">${s.abbr}</span></td>
+      <td><span class="badge badge-${s.stage}">${stageInfo.label}</span></td>
+      <td style="color:var(--text-muted)">${s.region}</td>
+      <td>${s.contact}</td>
+      <td style="color:${s.funded ? 'var(--green)' : 'var(--text-muted)'}">${s.funding}</td>
+      <td style="color:var(--text-muted)">${s.fellows.length > 0 ? s.fellows.length + ' fellow(s)' : '—'}</td>
+    </tr>`;
+  }).join('');
+  // reapply selected
+  if (selectedState) {
+    const row = body.querySelector(`[data-abbr="${selectedState}"]`);
+    if (row) row.classList.add('selected-row');
+  }
+}
+
+// ─── FILTER BUTTONS ───────────────────────────────────────────────────────────
+function renderFilters() {
+  const row = document.getElementById('filter-row');
+  const opts = [['all','All'], ...STAGES.map(s => [s.id, s.label])];
+  row.innerHTML = opts.map(([id, label]) =>
+    `<button class="filter-btn ${activeFilter === id ? 'active' : ''}" onclick="setFilter('${id}')">${label}</button>`
+  ).join('');
+}
+function setFilter(id) {
+  activeFilter = id;
+  renderFilters();
+  renderTable();
+}
+
+// ─── PACE CHART ───────────────────────────────────────────────────────────────
+function renderPace() {
+  const years = [
+    { year: '2026', actual: 11, target: 10 },
+    { year: '2027', actual: null, target: 10 },
+    { year: '2028', actual: null, target: 10 },
+    { year: '2029', actual: null, target: 10 },
+    { year: '2030', actual: null, target: 10 },
+  ];
+  const container = document.getElementById('pace-chart');
+  container.innerHTML = years.map(y => `
+    <div class="pace-row">
+      <span class="pace-label">${y.year}</span>
+      <div class="pace-bar-wrap">
+        <div class="pace-bar" style="width:${y.actual ? Math.min(100, y.actual/10*100) : 0}%;background:${y.actual >= 10 ? 'var(--green)' : y.actual ? 'var(--orange)' : 'var(--border)'}"></div>
+      </div>
+      <span class="pace-num">${y.actual !== null ? y.actual : '—'}</span>
+      <span class="pace-target">/ ${y.target} target</span>
+    </div>
+  `).join('');
+}
+
+// ─── DETAIL PANEL ─────────────────────────────────────────────────────────────
+let selectedState = null;
+function selectState(abbr) {
+  selectedState = abbr;
+  const s = DATA.find(d => d.abbr === abbr);
+  const stageInfo = STAGES.find(st => st.id === s.stage);
+  const stageIndex = STAGES.findIndex(st => st.id === s.stage);
+  const progress = Math.round((stageIndex / (STAGES.length - 1)) * 100);
+
+  const panel = document.getElementById('right-panel');
+  panel.innerHTML = `
+    <div class="detail-header">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <h2>${s.name}</h2>
+          <div class="region">${s.region} Region &nbsp;·&nbsp; ${s.abbr}</div>
+        </div>
+        <span class="badge badge-${s.stage}" style="margin-top:4px">${stageInfo.label}</span>
+      </div>
+      <div class="progress-bar-wrap" style="margin-top:12px">
+        <div class="progress-bar" style="width:${progress}%;background:${stageInfo.color}"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Program progress: ${progress}%</div>
+    </div>
+
+    <div class="detail-section">
+      <h4>Key Info</h4>
+      <div class="kv">
+        <span class="k">Lead Contact</span><span class="v">${s.contact}</span>
+        <span class="k">Region</span><span class="v">${s.region}</span>
+        <span class="k">Funding Raised</span><span class="v" style="color:${s.funded ? 'var(--green)' : 'var(--text-muted)'}">${s.funding}</span>
+        <span class="k">Fellows</span><span class="v">${s.fellows.length > 0 ? s.fellows.length : 'None yet'}</span>
+      </div>
+    </div>
+
+    ${s.fellows.length > 0 ? `
+    <div class="detail-section">
+      <h4>Fellows</h4>
+      ${s.fellows.map(f => `<div class="fellow-card"><div class="name">👤 ${f.split(' (')[0]}</div><div class="role">${f.includes('(') ? f.match(/\(([^)]+)\)/)[1] : ''}</div></div>`).join('')}
+    </div>` : ''}
+
+    ${s.funders.length > 0 ? `
+    <div class="detail-section">
+      <h4>Funders & Commitments</h4>
+      ${s.funders.map(f => `<div class="funder-row"><span>${f.name}</span><span class="funder-amount">${f.amt}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${s.milestones.length > 0 ? `
+    <div class="detail-section">
+      <h4>Milestones</h4>
+      ${s.milestones.map(m => `
+        <div class="milestone">
+          <div class="milestone-dot" style="background:${m.done ? 'var(--green)' : 'var(--border)'}; border: 2px solid ${m.done ? 'var(--green)' : 'var(--gray)'}"></div>
+          <div>
+            <div class="milestone-text" style="color:${m.done ? 'var(--text)' : 'var(--text-muted)'}">${m.text}</div>
+            <div class="milestone-date">${m.date}</div>
+          </div>
+        </div>`).join('')}
+    </div>` : `
+    <div class="detail-section">
+      <h4>Milestones</h4>
+      <div style="color:var(--text-muted);font-size:12px">No milestones recorded yet. This state is in early prospecting.</div>
+    </div>`}
+
+    <div class="detail-section">
+      <h4>Next Steps</h4>
+      <div style="font-size:13px;color:var(--text-muted)">
+        ${nextStepText(s.stage)}
+      </div>
+    </div>
+  `;
+
+  // highlight chips
+  document.querySelectorAll('.state-chip').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll(`[data-abbr="${abbr}"]`).forEach(el => el.classList.add('selected'));
+  // highlight table row
+  document.querySelectorAll('#state-table-body tr').forEach(r => r.classList.remove('selected-row'));
+  const row = document.querySelector(`#state-table-body [data-abbr="${abbr}"]`);
+  if (row) { row.classList.add('selected-row'); row.scrollIntoView({block:'nearest'}); }
+}
+
+function nextStepText(stage) {
+  const map = {
+    prospecting:  'Identify a champion legislator and at least one potential funder. Goal: schedule an exploratory call.',
+    relationship: 'Formalize the partnership with an MOU. Begin identifying funding sources.',
+    funding:      'Close full funding commitment before recruiting fellows. Target: $80–150k for Year 1.',
+    placing:      'Conduct fellow interviews and selection. Coordinate with host office on start date.',
+    active:       'Support placed fellow, collect mid-term feedback, begin planning for Year 2.',
+    sustaining:   'Document the model, grow the alumni network, and identify replication opportunities.',
+  };
+  return map[stage] || '—';
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+renderPipeline();
+renderTable();
+renderFilters();
+renderPace();
+</script>
+</body>
+</html>
