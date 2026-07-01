@@ -124,6 +124,21 @@ export async function createFellow(data: Partial<Fellow>): Promise<boolean> {
   return true;
 }
 
+export async function updateFellow(id: string, data: Partial<Fellow>): Promise<boolean> {
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const rowNum = await findRowById('Fellows', id);
+  if (!rowNum) return false;
+  // fellowRowValues produces 22 columns (A–V)
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Fellows!A${rowNum}:V${rowNum}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [fellowRowValues(id, data)] },
+  });
+  return true;
+}
+
 export async function deleteFellow(id: string): Promise<boolean> {
   const sheets = await getSheetsClient();
   const spreadsheetId = getSpreadsheetId();

@@ -440,6 +440,9 @@ export default function FellowsPage() {
   const [showAddFellow, setShowAddFellow] = useState(false);
   const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
   const [addFellowSaving, setAddFellowSaving] = useState(false);
+  const [editFellow, setEditFellow] = useState<Fellow | null>(null);
+  const [editFellowForm, setEditFellowForm] = useState<Partial<Fellow>>({});
+  const [editFellowSaving, setEditFellowSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Active');
   const [typeFilter, setTypeFilter] = useState('All Types');
@@ -582,7 +585,7 @@ export default function FellowsPage() {
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {filtered.map(f => (
-                  <FellowCard key={f.id} fellow={f} onView={() => setSelectedFellow(f)} onEdit={() => {}} />
+                  <FellowCard key={f.id} fellow={f} onView={() => setSelectedFellow(f)} onEdit={() => { setEditFellow(f); setEditFellowForm({ ...f }); }} />
                 ))}
               </div>
             )}
@@ -591,6 +594,87 @@ export default function FellowsPage() {
       </main>
 
       {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)} />}
+
+      {editFellow && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Edit Fellow — {editFellow.name}</h2>
+              <button onClick={() => setEditFellow(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+            <div className="px-6 py-4 grid grid-cols-2 gap-4">
+              {([
+                ['Name', 'name', 'text'],
+                ['Email', 'email', 'text'],
+                ['Congressional Email', 'congressional_email', 'text'],
+                ['Phone', 'phone', 'text'],
+                ['LinkedIn', 'linkedin', 'text'],
+                ['Office', 'office', 'text'],
+                ['Supervisor Email', 'supervisor_email', 'text'],
+                ['Cohort', 'cohort', 'text'],
+                ['Start Date', 'start_date', 'text'],
+                ['End Date', 'end_date', 'text'],
+                ['Last Check-in', 'last_check_in', 'text'],
+                ['Prior Role', 'prior_role', 'text'],
+                ['Education', 'education', 'text'],
+                ['Report Start Date', 'report_start_date', 'text'],
+                ['Report End Month', 'report_end_month', 'text'],
+              ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                  <input type={type} value={(editFellowForm[field] as string) || ''} onChange={e => setEditFellowForm(f => ({ ...f, [field]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </div>
+              ))}
+              {([
+                ['Fellow Type', 'fellow_type', ['Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']],
+                ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
+                ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
+                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew']],
+              ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                  <select value={(editFellowForm[field] as string) || ''} onChange={e => setEditFellowForm(f => ({ ...f, [field]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+                    {options.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div className="col-span-2 flex items-center gap-2">
+                <input type="checkbox" id="editReqReports" checked={!!editFellowForm.requires_monthly_reports}
+                  onChange={e => setEditFellowForm(f => ({ ...f, requires_monthly_reports: e.target.checked }))}
+                  className="rounded border-gray-300" />
+                <label htmlFor="editReqReports" className="text-sm text-gray-700">Requires monthly status reports</label>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                <textarea value={editFellowForm.notes || ''} onChange={e => setEditFellowForm(f => ({ ...f, notes: e.target.value }))} rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setEditFellow(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+              <button disabled={editFellowSaving} onClick={async () => {
+                setEditFellowSaving(true);
+                try {
+                  await fetch('/api/fellows', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: editFellow.id, ...editFellowForm }),
+                  });
+                  setEditFellow(null);
+                  const res = await fetch('/api/fellows');
+                  setFellows(await res.json());
+                } finally {
+                  setEditFellowSaving(false);
+                }
+              }} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-medium">
+                {editFellowSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddFellow && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
