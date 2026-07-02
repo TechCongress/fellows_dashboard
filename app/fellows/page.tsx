@@ -178,10 +178,10 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx); else next.add(idx);
       const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
-      fetch('/api/fellows', {
+      fetch('/api/fellows/onboarding', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...fellow, id: fellow.id, onboarding_completed: completedStr }),
+        body: JSON.stringify({ id: fellow.id, onboarding_completed: completedStr }),
       }).then(() => {
         if (onFellowUpdate) onFellowUpdate({ ...fellow, onboarding_completed: completedStr });
       }).catch(err => console.error('Failed to save onboarding:', err));
@@ -577,7 +577,8 @@ export default function FellowsPage() {
     const party: Record<string, number> = {}, chamber: Record<string, number> = {}, type: Record<string, number> = {};
     activeFellows.forEach(f => {
       if (f.party) party[f.party] = (party[f.party] || 0) + 1;
-      const ch = isAISF(f) ? 'Executive Branch' : (f.chamber || 'Unknown');
+      const VALID_CHAMBERS = ['House', 'Senate', 'Executive Branch'];
+      const ch = isAISF(f) ? 'Executive Branch' : (VALID_CHAMBERS.includes(f.chamber) ? f.chamber : 'Unknown');
       chamber[ch] = (chamber[ch] || 0) + 1;
       const t = ftLabel(f.fellow_type || '');
       type[t] = (type[t] || 0) + 1;

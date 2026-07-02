@@ -86,57 +86,90 @@ export async function fetchFellows(): Promise<Fellow[]> {
   }));
 }
 
-function fellowRowValues(id: string, d: Partial<Fellow>): string[] {
-  return [
-    id,
-    d.name || '',
-    d.email || '',
-    d.congressional_email || '',
-    d.phone || '',
-    d.linkedin || '',
-    d.fellow_type || '',
-    d.party || '',
-    d.office || '',
-    d.supervisor_email || '',
-    d.chamber || '',
-    d.cohort || '',
-    d.status || 'Active',
-    d.start_date || '',
-    d.end_date || '',
-    d.last_check_in || '',
-    d.prior_role || '',
-    d.education || '',
-    d.notes || '',
-    d.requires_monthly_reports ? 'TRUE' : 'FALSE',
-    d.report_start_date || '',
-    d.report_end_month || '',
-    d.onboarding_completed || '',  // W: Onboarding Completed Tasks
-  ];
+function fellowDataMap(id: string, d: Partial<Fellow>): Record<string, string> {
+  return {
+    'ID': id,
+    'Name': d.name || '',
+    'Email': d.email || '',
+    'Congressional Email': d.congressional_email || '',
+    'Phone': d.phone || '',
+    'LinkedIn': d.linkedin || '',
+    'Fellow Type': d.fellow_type || '',
+    'Party': d.party || '',
+    'Office': d.office || '',
+    "Supervisor's Email": d.supervisor_email || '',
+    'Chamber': d.chamber || '',
+    'Cohort': d.cohort || '',
+    'Status': d.status || 'Active',
+    'Start Date': d.start_date || '',
+    'End Date': d.end_date || '',
+    'Last Check-in': d.last_check_in || '',
+    'Prior Role': d.prior_role || '',
+    'Education': d.education || '',
+    'Notes': d.notes || '',
+    'Requires Monthly Reports': d.requires_monthly_reports ? 'TRUE' : 'FALSE',
+    'Report Start Date': d.report_start_date || '',
+    'Report End Month': d.report_end_month || '',
+    'Onboarding Completed Tasks': d.onboarding_completed || '',
+  };
+}
+
+async function getFellowHeaders(): Promise<string[]> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: getSpreadsheetId(),
+    range: 'Fellows!1:1',
+  });
+  return (res.data.values?.[0] || []) as string[];
 }
 
 export async function createFellow(data: Partial<Fellow>): Promise<boolean> {
-  const sheets = await getSheetsClient();
   const id = newId();
+  const headers = await getFellowHeaders();
+  const map = fellowDataMap(id, data);
+  const row = headers.map(h => map[h] ?? '');
+  const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: 'Fellows',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [fellowRowValues(id, data)] },
+    requestBody: { values: [row] },
   });
   return true;
 }
 
 export async function updateFellow(id: string, data: Partial<Fellow>): Promise<boolean> {
+  const headers = await getFellowHeaders();
+  const map = fellowDataMap(id, data);
+  const row = headers.map(h => map[h] ?? '');
   const sheets = await getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
   if (!rowNum) return false;
-  // fellowRowValues produces 23 columns (A–W)
+  const lastCol = String.fromCharCode(64 + headers.length);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Fellows!A${rowNum}:W${rowNum}`,
+    range: `Fellows!A${rowNum}:${lastCol}${rowNum}`,
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [fellowRowValues(id, data)] },
+    requestBody: { values: [row] },
+  });
+  return true;
+}
+
+export async function updateFellowOnboarding(id: string, completed: string): Promise<boolean> {
+  const headers = await getFellowHeaders();
+  const colIndex = headers.indexOf('Onboarding Completed Tasks');
+  if (colIndex === -1) return false; // column not yet added to sheet
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const rowNum = await findRowById('Fellows', id);
+  if (!rowNum) return false;
+  const colLetter = String.fromCharCode(65 + colIndex);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Fellows!${colLetter}${rowNum}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[completed]] },
   });
   return true;
 }
