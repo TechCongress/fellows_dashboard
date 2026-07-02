@@ -681,6 +681,11 @@ export default function FellowsPage() {
       const completed = new Set(raw.split(',').map(Number).filter(n => !isNaN(n)));
       return completed.size < ONBOARDING_TASKS.length;
     }).length;
+    const offboardingIncomplete = activeFellows.filter(f => {
+      if (!f.offboarding_completed) return false;
+      const completed = new Set(f.offboarding_completed.split(',').map(Number).filter(n => !isNaN(n)));
+      return completed.size > 0 && completed.size < OFFBOARDING_TASKS.length;
+    }).length;
     return {
       total: activeFellows.length,
       active: activeFellows.filter(f => f.status === 'Active').length,
@@ -688,6 +693,7 @@ export default function FellowsPage() {
       endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
       needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active' && !isAISF(f)).length,
       onboardingIncomplete,
+      offboardingIncomplete,
     };
   }, [activeFellows]);
 
@@ -762,11 +768,12 @@ export default function FellowsPage() {
           <div className="flex items-center justify-center h-64 text-gray-400">Loading fellows…</div>
         ) : (
           <>
-            <div className="grid grid-cols-6 gap-3 mb-8">
+            <div className="grid grid-cols-7 gap-3 mb-8">
               {[
                 { label: 'Total Fellows', value: stats.total },
                 { label: 'Active', value: stats.active },
                 { label: 'Onboarding', value: stats.onboardingIncomplete },
+                { label: 'Offboarding', value: stats.offboardingIncomplete },
                 { label: 'Needs Check-in', value: stats.needsCheckin },
                 { label: 'Flagged', value: stats.flagged },
                 { label: 'Ending Soon', value: stats.endingSoon },
