@@ -266,7 +266,23 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
             <div>
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs text-gray-500">{onboardingDone} of {onboardingTotal} tasks complete</p>
-                <p className="text-xs text-gray-400">{onboardingPct}%</p>
+                <button
+                  onClick={() => {
+                    const allDone = onboardingDone === onboardingTotal;
+                    const next = allDone ? new Set<number>() : new Set(ONBOARDING_TASKS.map((_, i) => i));
+                    setCompletedSet(next);
+                    const completedStr = allDone ? '' : Array.from(next).join(',');
+                    fetch('/api/fellows/onboarding', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: fellow.id, onboarding_completed: completedStr }),
+                    }).then(() => {
+                      if (onFellowUpdate) onFellowUpdate({ ...fellow, onboarding_completed: completedStr });
+                    }).catch(err => console.error('Failed to save onboarding:', err));
+                  }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors">
+                  {onboardingDone === onboardingTotal ? 'Uncheck all' : 'Check all'}
+                </button>
               </div>
               <div className="w-full bg-gray-100 rounded-full h-1.5 mb-5">
                 <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${onboardingPct}%` }} />
