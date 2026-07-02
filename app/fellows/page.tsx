@@ -124,6 +124,14 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
   );
 }
 
+const OFFBOARDING_TASKS: { label: string }[] = [
+  { label: 'Submitted Accomplishments document' },
+  { label: 'Completed exit interview' },
+  { label: 'Confirm final paycheck' },
+  { label: 'Offboard in Rippling' },
+  { label: 'Remove from #current-fellows-plus-tc Slack channel' },
+];
+
 const ONBOARDING_TASKS: { label: string; link?: string }[] = [
   { label: 'Offer sent' },
   { label: 'Offer accepted' },
@@ -140,7 +148,7 @@ const ONBOARDING_TASKS: { label: string; link?: string }[] = [
   { label: 'Send Placement Intake Form' },
 ];
 
-type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'reports' | 'checkins';
+type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'reports' | 'checkins' | 'offboarding';
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -172,6 +180,31 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
     if (!initialCompleted) return new Set<number>();
     return new Set(initialCompleted.split(',').map(Number).filter(n => !isNaN(n)));
   });
+
+  const [offboardingSet, setOffboardingSet] = useState<Set<number>>(() => {
+    if (!fellow.offboarding_completed) return new Set<number>();
+    return new Set(fellow.offboarding_completed.split(',').map(Number).filter(n => !isNaN(n)));
+  });
+  const offboardingDone = offboardingSet.size;
+  const offboardingTotal = OFFBOARDING_TASKS.length;
+  const offboardingPct = Math.round((offboardingDone / offboardingTotal) * 100);
+  const offboardingComplete = offboardingDone === offboardingTotal;
+
+  const toggleOffboardingTask = useCallback((idx: number) => {
+    setOffboardingSet(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
+      fetch('/api/fellows/offboarding', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: fellow.id, offboarding_completed: completedStr }),
+      }).then(() => {
+        if (onFellowUpdate) onFellowUpdate({ ...fellow, offboarding_completed: completedStr });
+      }).catch(err => console.error('Failed to save offboarding:', err));
+      return next;
+    });
+  }, [fellow, onFellowUpdate]);
 
   const toggleOnboardingTask = useCallback((idx: number) => {
     setCompletedSet(prev => {
@@ -231,6 +264,15 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
     { key: 'background', label: 'Background' },
     { key: 'reports', label: 'Status Reports' },
     { key: 'checkins', label: 'Check-ins' },
+    { key: 'offboarding', label: (
+      <span className="flex items-center gap-1.5">
+        Offboarding
+        {offboardingDone > 0 && !offboardingComplete &&
+          <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{offboardingDone}/{offboardingTotal}</span>}
+        {offboardingComplete &&
+          <span className="text-green-500 text-xs">✓</span>}
+      </span>
+    )},
   ];
 
   return (
@@ -446,10 +488,70 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
                 )}
             </div>
           )}
+
+          {tab === 'offboarding' && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-gray-500">{offboardingDone} of {offboardingTotal} tasks complete</p>
+                <button
+                  onClick={() => {
+                    const allDone = offboardingComplete;
+                    const next = allDone ? new Set<number>() : new Set(OFFBOARDING_TASKS.map((_, i) => i));
+                    setOffboardingSet(next);
+                    const completedStr = allDone ? '' : Array.from(next).join(',');
+                    fetch('/api/fellows/offboarding', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: fellow.id, offboarding_completed: completedStr }),
+                    }).then(() => {
+                      if (onFellowUpdate) onFellowUpdate({ ...fellow, offboarding_completed: completedStr });
+                    }).catch(err => console.error('Failed to save offboarding:', err));
+                  }}
+                  className="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">
+                  {offboardingComplete ? 'Uncheck all' : 'Check all'}
+                </button>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5 mb-4">
+                <div className="bg-amber-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${offboardingPct}%` }} />
+              </div>
+              {!offboardingComplete && (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 text-xs text-amber-700">
+                  ⚠️ All tasks must be complete before moving this fellow to alumni.
+                </div>
+              )}
+              <div className="space-y-1.5">
+                {OFFBOARDING_TASKS.map((task, idx) => {
+                  const done = offboardingSet.has(idx);
+                  return (
+                    <div key={idx} onClick={() => toggleOffboardingTask(idx)}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none
+                        ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                      <div className={`flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
+                        ${done ? 'bg-green-500 text-white' : 'border border-gray-300 bg-white'}`}
+                        style={{ width: 18, height: 18, marginTop: 1 }}>
+                        {done && '✓'}
+                      </div>
+                      <span className={`text-sm leading-snug ${done ? 'text-green-800 line-through decoration-green-400' : 'text-gray-800'}`}>
+                        {task.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex gap-2">
-          <button onClick={() => setShowMoveModal(true)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Move to Alumni</button>
+          <button
+            onClick={() => offboardingComplete ? setShowMoveModal(true) : setTab('offboarding')}
+            title={offboardingComplete ? '' : 'Complete all offboarding tasks first'}
+            className={`flex-1 py-2 rounded-lg border text-sm transition-colors
+              ${offboardingComplete
+                ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                : 'border-amber-200 text-amber-600 hover:bg-amber-50'}`}>
+            {offboardingComplete ? 'Move to Alumni' : '⚠️ Move to Alumni (offboarding incomplete)'}
+          </button>
           <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm hover:bg-gray-700 transition-colors">Close</button>
         </div>
       </div>

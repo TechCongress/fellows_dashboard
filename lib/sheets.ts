@@ -83,6 +83,7 @@ export async function fetchFellows(): Promise<Fellow[]> {
     report_start_date: r['Report Start Date'] || '',
     report_end_month: r['Report End Month'] || '',
     onboarding_completed: r['Onboarding Completed Tasks'] || '',
+    offboarding_completed: r['Offboarding Completed Tasks'] || '',
   }));
 }
 
@@ -111,6 +112,7 @@ function fellowDataMap(id: string, d: Partial<Fellow>): Record<string, string> {
     'Report Start Date': d.report_start_date || '',
     'Report End Month': d.report_end_month || '',
     'Onboarding Completed Tasks': d.onboarding_completed || '',
+    'Offboarding Completed Tasks': d.offboarding_completed || '',
   };
 }
 
@@ -160,6 +162,24 @@ export async function updateFellowOnboarding(id: string, completed: string): Pro
   const headers = await getFellowHeaders();
   const colIndex = headers.indexOf('Onboarding Completed Tasks');
   if (colIndex === -1) return false; // column not yet added to sheet
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const rowNum = await findRowById('Fellows', id);
+  if (!rowNum) return false;
+  const colLetter = String.fromCharCode(65 + colIndex);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Fellows!${colLetter}${rowNum}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[completed]] },
+  });
+  return true;
+}
+
+export async function updateFellowOffboarding(id: string, completed: string): Promise<boolean> {
+  const headers = await getFellowHeaders();
+  const colIndex = headers.indexOf('Offboarding Completed Tasks');
+  if (colIndex === -1) return false;
   const sheets = await getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
