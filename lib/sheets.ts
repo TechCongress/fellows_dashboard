@@ -82,6 +82,7 @@ export async function fetchFellows(): Promise<Fellow[]> {
     requires_monthly_reports: toBool(r['Requires Monthly Reports']),
     report_start_date: r['Report Start Date'] || '',
     report_end_month: r['Report End Month'] || '',
+    onboarding_completed: r['Onboarding Completed Tasks'] || '',
   }));
 }
 
@@ -109,6 +110,7 @@ function fellowRowValues(id: string, d: Partial<Fellow>): string[] {
     d.requires_monthly_reports ? 'TRUE' : 'FALSE',
     d.report_start_date || '',
     d.report_end_month || '',
+    d.onboarding_completed || '',  // W: Onboarding Completed Tasks
   ];
 }
 
@@ -129,10 +131,10 @@ export async function updateFellow(id: string, data: Partial<Fellow>): Promise<b
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
   if (!rowNum) return false;
-  // fellowRowValues produces 22 columns (A–V)
+  // fellowRowValues produces 23 columns (A–W)
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `Fellows!A${rowNum}:V${rowNum}`,
+    range: `Fellows!A${rowNum}:W${rowNum}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [fellowRowValues(id, data)] },
   });

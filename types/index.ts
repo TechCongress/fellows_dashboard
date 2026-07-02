@@ -21,6 +21,7 @@ export interface Fellow {
   requires_monthly_reports: boolean;
   report_start_date: string;
   report_end_month: string;
+  onboarding_completed?: string;  // comma-separated completed task indices e.g. "0,1,2,3"
 }
 
 export interface Checkin {

@@ -124,7 +124,23 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
   );
 }
 
-type ModalTab = 'contact' | 'placement' | 'background' | 'reports' | 'checkins';
+const ONBOARDING_TASKS: { label: string; link?: string }[] = [
+  { label: 'Offer sent' },
+  { label: 'Offer accepted' },
+  { label: 'Onboard on Rippling' },
+  { label: 'Confirm bank account added in Rippling' },
+  { label: 'Confirm Conflict of Interest Policy signed' },
+  { label: 'TechCongress Fellowship Handbook signed' },
+  { label: 'Add to Slack (including Current Fellows channel)' },
+  { label: 'Add to Groups.io' },
+  { label: 'Add to Slite' },
+  { label: 'Add to Pitfellows Google Group' },
+  { label: 'Send TechCongress Fellowship Reimbursement Policies' },
+  { label: 'Send list of newsletters to join and reading recs', link: 'https://docs.google.com/document/d/1HJATXWVr2LnOfvgRTCJxGrlhxueu-eekIpVGFEZhu7Y/edit?usp=sharing' },
+  { label: 'Send Placement Intake Form' },
+];
+
+type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'reports' | 'checkins';
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -135,8 +151,8 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void }) {
-  const [tab, setTab] = useState<ModalTab>('contact');
+function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onClose: () => void; onFellowUpdate?: (updated: Fellow) => void }) {
+  const [tab, setTab] = useState<ModalTab>('onboarding');
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loadingCheckins, setLoadingCheckins] = useState(false);
@@ -147,6 +163,31 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
   const [moveForm, setMoveForm] = useState({ current_role: '', sector: '', location: '' });
   const [moveSaving, setMoveSaving] = useState(false);
   const [moveDone, setMoveDone] = useState(false);
+
+  // Onboarding state — auto-mark all complete if the fellow has already started
+  const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
+  const isAlreadyStarted = !!fellow.start_date && new Date(fellow.start_date) <= new Date();
+  const initialCompleted = fellow.onboarding_completed ?? (isAlreadyStarted ? allIndices : '');
+  const [completedSet, setCompletedSet] = useState<Set<number>>(() => {
+    if (!initialCompleted) return new Set<number>();
+    return new Set(initialCompleted.split(',').map(Number).filter(n => !isNaN(n)));
+  });
+
+  const toggleOnboardingTask = useCallback((idx: number) => {
+    setCompletedSet(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
+      fetch('/api/fellows', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fellow, id: fellow.id, onboarding_completed: completedStr }),
+      }).then(() => {
+        if (onFellowUpdate) onFellowUpdate({ ...fellow, onboarding_completed: completedStr });
+      }).catch(err => console.error('Failed to save onboarding:', err));
+      return next;
+    });
+  }, [fellow, onFellowUpdate]);
 
   const requiredMonths = useMemo(() => getRequiredReportMonths(fellow), [fellow]);
   const streakInfo = useMemo(() => calculateStreak(reports, requiredMonths), [reports, requiredMonths]);
@@ -171,7 +212,20 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
   const days = daysSince(fellow.last_check_in);
   const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
 
-  const TABS: { key: ModalTab; label: string }[] = [
+  const onboardingDone = completedSet.size;
+  const onboardingTotal = ONBOARDING_TASKS.length;
+  const onboardingPct = Math.round((onboardingDone / onboardingTotal) * 100);
+
+  const TABS: { key: ModalTab; label: React.ReactNode }[] = [
+    { key: 'onboarding', label: (
+      <span className="flex items-center gap-1.5">
+        Onboarding
+        {onboardingDone < onboardingTotal
+          ? <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{onboardingDone}/{onboardingTotal}</span>
+          : <span className="text-green-500 text-xs">✓</span>
+        }
+      </span>
+    )},
     { key: 'contact', label: 'Contact' },
     { key: 'placement', label: 'Placement' },
     { key: 'background', label: 'Background' },
@@ -208,6 +262,44 @@ function FellowModal({ fellow, onClose }: { fellow: Fellow; onClose: () => void 
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
+          {tab === 'onboarding' && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-gray-500">{onboardingDone} of {onboardingTotal} tasks complete</p>
+                <p className="text-xs text-gray-400">{onboardingPct}%</p>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5 mb-5">
+                <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${onboardingPct}%` }} />
+              </div>
+              <div className="space-y-1.5">
+                {ONBOARDING_TASKS.map((task, idx) => {
+                  const done = completedSet.has(idx);
+                  return (
+                    <div key={idx} onClick={() => toggleOnboardingTask(idx)}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none
+                        ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                      <div className={`w-4.5 h-4.5 mt-0.5 flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
+                        ${done ? 'bg-green-500 text-white' : 'border border-gray-300 bg-white'}`}
+                        style={{ width: 18, height: 18 }}>
+                        {done && '✓'}
+                      </div>
+                      <span className={`text-sm leading-snug ${done ? 'text-green-800 line-through decoration-green-400' : 'text-gray-800'}`}>
+                        {task.label}
+                        {task.link && (
+                          <a href={task.link} target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="ml-1.5 text-blue-500 hover:text-blue-700 no-underline text-xs font-medium">
+                            ↗ Open doc
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {tab === 'contact' && (
             <dl className="space-y-3">
               {fellow.email && <InfoRow label="Email" value={<a href={`mailto:${fellow.email}`} className="text-blue-600 hover:underline">{fellow.email}</a>} />}
@@ -462,13 +554,24 @@ export default function FellowsPage() {
 
   const activeFellows = useMemo(() => fellows.filter(f => !INACTIVE_STATUSES.includes(f.status)), [fellows]);
 
-  const stats = useMemo(() => ({
-    total: activeFellows.length,
-    active: activeFellows.filter(f => f.status === 'Active').length,
-    flagged: activeFellows.filter(f => f.status === 'Flagged').length,
-    endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
-    needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active' && !isAISF(f)).length,
-  }), [activeFellows]);
+  const stats = useMemo(() => {
+    const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
+    const onboardingIncomplete = activeFellows.filter(f => {
+      const isStarted = !!f.start_date && new Date(f.start_date) <= new Date();
+      const raw = f.onboarding_completed ?? (isStarted ? allIndices : '');
+      if (!raw) return true;
+      const completed = new Set(raw.split(',').map(Number).filter(n => !isNaN(n)));
+      return completed.size < ONBOARDING_TASKS.length;
+    }).length;
+    return {
+      total: activeFellows.length,
+      active: activeFellows.filter(f => f.status === 'Active').length,
+      flagged: activeFellows.filter(f => f.status === 'Flagged').length,
+      endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
+      needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active' && !isAISF(f)).length,
+      onboardingIncomplete,
+    };
+  }, [activeFellows]);
 
   const chartData = useMemo(() => {
     const party: Record<string, number> = {}, chamber: Record<string, number> = {}, type: Record<string, number> = {};
@@ -540,17 +643,18 @@ export default function FellowsPage() {
           <div className="flex items-center justify-center h-64 text-gray-400">Loading fellows…</div>
         ) : (
           <>
-            <div className="grid grid-cols-5 gap-4 mb-8">
+            <div className="grid grid-cols-6 gap-3 mb-8">
               {[
                 { label: 'Total Fellows', value: stats.total },
                 { label: 'Active', value: stats.active },
+                { label: 'Onboarding', value: stats.onboardingIncomplete },
                 { label: 'Needs Check-in', value: stats.needsCheckin },
                 { label: 'Flagged', value: stats.flagged },
                 { label: 'Ending Soon', value: stats.endingSoon },
               ].map(s => (
-                <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500 mb-1">{s.label}</p>
-                  <p className="text-3xl font-semibold text-gray-900">{s.value}</p>
+                <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-3">
+                  <p className="text-xs text-gray-500 mb-1">{s.label}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{s.value}</p>
                 </div>
               ))}
             </div>
@@ -593,7 +697,8 @@ export default function FellowsPage() {
         )}
       </main>
 
-      {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)} />}
+      {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)}
+        onFellowUpdate={updated => { setFellows(fs => fs.map(f => f.id === updated.id ? updated : f)); setSelectedFellow(updated); }} />}
 
       {editFellow && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
