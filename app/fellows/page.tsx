@@ -7,10 +7,13 @@ import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredRepor
 type SortOption = 'Cohort (newest first)' | 'Cohort (oldest first)' | 'Priority (Flagged first)' | 'Name (A–Z)' | 'Name (Z–A)' | 'Last Check-in (oldest first)' | 'Last Check-in (newest first)' | 'End Date (soonest first)' | 'End Date (latest first)';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  Active:        { bg: 'bg-green-100',  text: 'text-green-800' },
-  Flagged:       { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-  'Ending Soon': { bg: 'bg-red-100',    text: 'text-red-800' },
-  Withdrew:      { bg: 'bg-gray-100',   text: 'text-gray-600' },
+  Active:                              { bg: 'bg-green-100',  text: 'text-green-800' },
+  Flagged:                             { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+  'Ending Soon':                       { bg: 'bg-red-100',    text: 'text-red-800' },
+  Withdrew:                            { bg: 'bg-gray-100',   text: 'text-gray-600' },
+  Offboarded:                          { bg: 'bg-orange-100', text: 'text-orange-700' },
+  'Verbal Acceptance/Sent Contract':   { bg: 'bg-purple-100', text: 'text-purple-800' },
+  'Signed Contract/Pre-Orientation':   { bg: 'bg-amber-100',  text: 'text-amber-800' },
 };
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
@@ -717,7 +720,7 @@ export default function FellowsPage() {
   const filtered = useMemo(() => {
     let list: Fellow[];
     if (statusFilter === 'All Active') list = [...activeFellows];
-    else if (statusFilter === 'Withdrew') list = fellows.filter(f => f.status === 'Withdrew');
+    else if (INACTIVE_STATUSES.includes(statusFilter)) list = fellows.filter(f => f.status === statusFilter);
     else list = activeFellows.filter(f => f.status === statusFilter);
 
     if (search) { const q = search.toLowerCase(); list = list.filter(f => f.name.toLowerCase().includes(q) || f.office.toLowerCase().includes(q)); }
@@ -795,7 +798,7 @@ export default function FellowsPage() {
               <div className="grid grid-cols-5 gap-3">
                 <input type="text" placeholder="Search name or office…" value={search} onChange={e => setSearch(e.target.value)}
                   className="col-span-2 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                <Select value={statusFilter} onChange={setStatusFilter} options={['All Active', 'Active', 'Flagged', 'Ending Soon', 'Withdrew']} />
+                <Select value={statusFilter} onChange={setStatusFilter} options={['All Active', 'Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']} />
                 <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', 'Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']} />
                 <Select value={partyFilter} onChange={setPartyFilter} options={['All Parties', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} />
               </div>
@@ -807,7 +810,9 @@ export default function FellowsPage() {
             </div>
 
             <p className="text-xs text-gray-400 mb-4">
-              {statusFilter === 'Withdrew' ? `Showing ${filtered.length} withdrawn fellow(s)` : `Showing ${filtered.length} of ${stats.total} active fellows`}
+              {INACTIVE_STATUSES.includes(statusFilter)
+                ? `Showing ${filtered.length} fellow(s) — ${statusFilter}`
+                : `Showing ${filtered.length} of ${stats.total} active fellows`}
             </p>
 
             {filtered.length === 0 ? (
@@ -861,7 +866,7 @@ export default function FellowsPage() {
                 ['Fellow Type', 'fellow_type', ['Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
                 ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
-                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew']],
+                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']],
               ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
                 <div key={field}>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -938,7 +943,7 @@ export default function FellowsPage() {
                 ['Fellow Type', 'fellow_type', ['CIF', 'Senior CIF', 'AI Security Fellow']],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
                 ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
-                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew']],
+                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']],
               ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
                 <div key={field}>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>

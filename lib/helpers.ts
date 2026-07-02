@@ -1,6 +1,12 @@
 import { Fellow, StatusReport, TCEvent, EventAttendance } from '@/types';
 
-export const INACTIVE_STATUSES = ['Withdrew', 'Alumni'];
+export const INACTIVE_STATUSES = [
+  'Withdrew',
+  'Alumni',
+  'Offboarded',
+  'Verbal Acceptance/Sent Contract',
+  'Signed Contract/Pre-Orientation',
+];
 
 export function daysSince(dateStr: string): number {
   if (!dateStr) return 9999;
