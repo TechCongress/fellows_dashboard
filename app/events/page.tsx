@@ -175,7 +175,7 @@ function AttendanceModal({ event, fellows, attendance, onClose, onSaved }: {
 // ── Tab: Overview ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ fellows, events, attendance }: { fellows: Fellow[]; events: TCEvent[]; attendance: EventAttendance[] }) {
-  const pastEvents = events.filter(e => isPast(e.date));
+  const pastEvents = events.filter(e => isPast(e.date)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const attByEvent = useMemo(() => {
     const m: Record<string, boolean[]> = {};
     attendance.forEach(r => { if (!m[r.event_id]) m[r.event_id] = []; m[r.event_id].push(r.attended); });
@@ -400,7 +400,7 @@ function FellowsTab({ fellows, events, attendance }: { fellows: Fellow[]; events
     attendance.forEach(r => { if (!m[r.fellow_id]) m[r.fellow_id] = {}; m[r.fellow_id][r.event_id] = r.attended; });
     return m;
   }, [attendance]);
-  const pastEvents = useMemo(() => events.filter(e => isPast(e.date)), [events]);
+  const pastEvents = useMemo(() => events.filter(e => isPast(e.date)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [events]);
 
   if (eligible.length === 0) return <p className="text-sm text-gray-400">No tracked fellows. Fellows must be Jan 2026 CIF/SCIF or a later cohort.</p>;
 
