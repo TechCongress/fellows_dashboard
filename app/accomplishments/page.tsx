@@ -59,6 +59,29 @@ function TagPill({ tag }: { tag: string }) {
   );
 }
 
+// ── Link injection ────────────────────────────────────────────────────────────
+// SheetJS renders hyperlinked text as <span style="text-decoration: underline;...">
+// without href. This function replaces those spans with real <a> tags using the
+// URLs extracted from the XLSX hyperlinks section.
+function makeLinksClickable(html: string, urls: string[]): string {
+  if (!html || urls.length === 0) return html;
+  if (/<a[\s>]/i.test(html)) return html; // already has anchor tags
+  let idx = 0;
+  // Pass 1: <u> tags (SheetJS sometimes outputs these)
+  const afterU = html.replace(/<u>([\s\S]*?)<\/u>/gi, (match, inner) => {
+    if (idx >= urls.length) return match;
+    return `<a href="${urls[idx++]}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;">${inner}</a>`;
+  });
+  if (afterU !== html) return afterU;
+  // Pass 2: <span> elements whose attributes contain the word "underline"
+  // Matches style="text-decoration: underline;font-size:12.0pt;" and any similar variant
+  idx = 0;
+  return html.replace(/<span([^>]*)>([\s\S]*?)<\/span>/gi, (match, attrs, inner) => {
+    if (!attrs.includes('underline') || idx >= urls.length) return match;
+    return `<a href="${urls[idx++]}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;">${inner}</a>`;
+  });
+}
+
 // ── Reference sidebar panels ─────────────────────────────────────────────────
 
 function TLPanel({ color }: { color: string }) {
@@ -183,8 +206,10 @@ function DetailModal({ item, onClose }: { item: Accomplishment; onClose: () => v
             </div>
             {item.description_html ? (
               <div
-                className="text-sm text-gray-800 leading-relaxed [&_span]:text-gray-800 [&_span[style*='underline']]:text-blue-700 [&_span[style*='underline']]:underline"
-                dangerouslySetInnerHTML={{ __html: item.description_html }}
+                className="text-sm text-gray-800 leading-relaxed [&_span]:text-gray-800"
+                dangerouslySetInnerHTML={{
+                  __html: makeLinksClickable(item.description_html, item.source_links || []),
+                }}
               />
             ) : (
               <p className="text-sm text-gray-800 leading-relaxed">{item.description}</p>

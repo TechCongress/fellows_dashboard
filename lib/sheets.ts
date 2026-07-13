@@ -568,6 +568,44 @@ function extractAllHyperlinksFromXlsx(buf: Buffer, sheetName: string): Record<st
   return cellToUrls;
 }
 
+// Pull any URLs already present as href="..." in SheetJS-generated HTML.
+// SheetJS occasionally includes <a> tags for simple HYPERLINK-formula cells.
+function extractUrlsFromHtml(html: string): string[] {
+  if (!html) return [];
+  const urls: string[] = [];
+  for (const m of html.matchAll(/href="([^"]+)"/gi)) {
+    if (m[1] && !urls.includes(m[1])) urls.push(m[1]);
+  }
+  return urls;
+}
+
+// Replace hyperlink-styled elements with real <a> tags using urls[] in order.
+// Handles <u> tags and <span> elements with any underline styling variant.
+// If the HTML already contains <a> tags, return it unchanged.
+function injectLinksIntoHtml(html: string, urls: string[]): string {
+  if (!html) return html;
+  if (/<a[\s>]/i.test(html)) return html; // already has anchors
+  if (urls.length === 0) return html;
+  let idx = 0;
+
+  const wrap = (inner: string) => {
+    if (idx >= urls.length) return null;
+    const url = urls[idx++];
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;">${inner}</a>`;
+  };
+
+  // 1. Try <u> tags first (SheetJS sometimes outputs these)
+  const afterU = html.replace(/<u>([\s\S]*?)<\/u>/gi, (match, inner) => wrap(inner) ?? match);
+  if (afterU !== html) return afterU;
+
+  // 2. Try <span> elements where the attributes mention "underline" in any form
+  idx = 0;
+  return html.replace(/<span([^>]*)>([\s\S]*?)<\/span>/gi, (match, attrs, inner) => {
+    if (!attrs.includes('underline')) return match;
+    return wrap(inner) ?? match;
+  });
+}
+
 function parseAccomplishmentSheet(
   ws: XLSX.WorkSheet,
   buf: Buffer,
@@ -634,6 +672,22 @@ function parseAccomplishmentSheet(
         if (fallback) sourceLinks = [fallback];
       }
 
+      // Also pull any URLs SheetJS embedded directly in the HTML, and merge (dedup)
+      const rawDescHtml = descHtmlAt(sheetRow);
+      const htmlUrls = extractUrlsFromHtml(rawDescHtml);
+      const mergedLinks = [...sourceLinks];
+      for (const u of htmlUrls) {
+        if (!mergedLinks.includes(u)) mergedLinks.push(u);
+      }
+
+      // Pull URLs from the Links/Evidence column and add to source_links.
+      // Supports: single plain URL, comma-separated plain URLs, or a hyperlinked cell.
+      const rawLinkField = linkData[sheetRow]?.url || r['Links/Evidence'] || '';
+      for (const part of rawLinkField.split(',')) {
+        const u = part.trim();
+        if (u.startsWith('http') && !mergedLinks.includes(u)) mergedLinks.push(u);
+      }
+
       return {
         id: `${tab}-${i}`,
         cohort: r['Cohort'] || '',
@@ -643,10 +697,10 @@ function parseAccomplishmentSheet(
         date: r['Date'] || '',
         type: r['Accomplishment Type'] || '',
         description: r['Description'] || '',
-        description_html: descHtmlAt(sheetRow),
-        source_link: sourceLinks[0] || '',
-        source_links: sourceLinks,
-        links: linkData[sheetRow]?.url || r['Links/Evidence'] || '',
+        description_html: rawDescHtml,
+        source_link: mergedLinks[0] || '',
+        source_links: mergedLinks,
+        links: rawLinkField,
         policy_tags: r['Policy Tags']
           ? r['Policy Tags'].split(',').map((t) => t.trim()).filter(Boolean)
           : [],

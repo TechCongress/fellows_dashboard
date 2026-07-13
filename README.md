@@ -158,7 +158,7 @@ The dashboard reads from and writes to a single Google Spreadsheet with the foll
 Column A in every tab is the ID column. Records added through the dashboard receive an auto-generated UUID. If adding rows directly in the sheet, you must supply a unique ID — duplicate or missing IDs will cause errors. Do not hide, delete, or reorder columns in any tab.
 
 The Fellows tab includes two dedicated checklist columns:
-- **Column X** — Onboarding Completed Tasks (comma-separated task indices)
-- **Column Y** — Offboarding Completed Tasks (comma-separated task indices)
+- **Column W** — Onboarding Completed Tasks (comma-separated task indices)
+- **Column X** — Offboarding Completed Tasks (comma-separated task indices)
 
 These columns are updated via single-cell writes to avoid overwriting other fellow data.
