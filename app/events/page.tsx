@@ -485,7 +485,7 @@ export default function EventsPage() {
     const [fr, er, ar] = await Promise.all([fetch('/api/fellows'), fetch('/api/events'), fetch('/api/attendance')]);
     const [fd, ed, ad] = await Promise.all([fr.json(), er.json(), ar.json()]);
     setFellows(Array.isArray(fd) ? fd : []);
-    setEvents(Array.isArray(ed) ? ed : []);
+    setEvents(Array.isArray(ed) ? [...ed].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []);
     setAttendance(Array.isArray(ad) ? ad : []);
     setLoading(false);
   }
