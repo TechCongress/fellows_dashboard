@@ -43,9 +43,10 @@ async function getSheetValues(sheetName: string): Promise<string[][]> {
 }
 
 function rowsToObjects(rows: string[][]): Record<string, string>[] {
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  return rows.slice(1).map((row) => {
+  // Row 1 (index 0) is a "do not edit" warning banner; row 2 (index 1) is headers.
+  if (rows.length < 3) return [];
+  const headers = rows[1];
+  return rows.slice(2).map((row) => {
     const obj: Record<string, string> = {};
     headers.forEach((header, i) => { obj[header] = row[i] || ''; });
     return obj;
@@ -120,7 +121,7 @@ async function getFellowHeaders(): Promise<string[]> {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: 'Fellows!1:1',
+    range: 'Fellows!2:2',
   });
   return (res.data.values?.[0] || []) as string[];
 }
@@ -309,7 +310,8 @@ async function getSheetsClient() {
 
 async function findRowById(sheetName: string, id: string): Promise<number | null> {
   const rows = await getSheetValues(sheetName);
-  for (let i = 1; i < rows.length; i++) {
+  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data
+  for (let i = 2; i < rows.length; i++) {
     if (rows[i][0] === id) return i + 1; // 1-indexed sheet row
   }
   return null;
@@ -345,7 +347,7 @@ async function getAlumniHeaders(): Promise<string[]> {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: 'Alumni!1:1',
+    range: 'Alumni!2:2',
   });
   return (res.data.values?.[0] || []) as string[];
 }
@@ -738,8 +740,9 @@ export async function saveAttendanceBatch(
   const rows = await getSheetValues('Event Attendance');
 
   // Build lookup: "eventId|fellowId" → row number
+  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data
   const existing: Record<string, number> = {};
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 2; i < rows.length; i++) {
     const key = `${rows[i][1]}|${rows[i][2]}`;
     existing[key] = i + 1;
   }
