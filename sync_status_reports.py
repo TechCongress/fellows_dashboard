@@ -234,7 +234,7 @@ def sync(year: int, month: int) -> dict:
 
     # ── 3. Fetch fellows and build lookup indexes ─────────────────────────────
     try:
-        fellows_rows = _ws(FELLOWS_SHEET).get_all_records()
+        fellows_rows = _ws(FELLOWS_SHEET).get_all_records(head=2)
     except Exception as e:
         result["errors"].append(f"Failed to fetch fellows: {e}")
         return result
@@ -252,7 +252,7 @@ def sync(year: int, month: int) -> dict:
 
     # ── 4. Load existing Status Report records ────────────────────────────────
     try:
-        all_reports = _ws(REPORTS_SHEET).get_all_records()
+        all_reports = _ws(REPORTS_SHEET).get_all_records(head=2)
     except Exception as e:
         result["errors"].append(f"Failed to fetch status reports: {e}")
         return result
@@ -263,7 +263,7 @@ def sync(year: int, month: int) -> dict:
     }
 
     report_id_to_row = {
-        str(r.get("ID", "")): idx + 2
+        str(r.get("ID", "")): idx + 3  # row 1 = warning banner, row 2 = headers, data starts at row 3
         for idx, r in enumerate(all_reports)
     }
 
