@@ -52,6 +52,7 @@ export function getRequiredReportMonths(fellow: Fellow): string[] {
 
 export interface StreakInfo {
   streak: number;
+  giftCards: number;      // total gift cards earned (1 per 3 consecutive on-time submissions)
   giftCardEligible: boolean;
   atRisk: boolean;
   reimbursementsPaused: boolean;
@@ -74,7 +75,8 @@ export function calculateStreak(reports: StatusReport[], requiredMonths: string[
     if (submittedOnTime.has(pastMonths[i])) streak++;
     else break;
   }
-  return { streak, giftCardEligible: streak >= 3, atRisk: missed === 1, reimbursementsPaused: missed >= 2 };
+  const giftCards = Math.floor(streak / 3);
+  return { streak, giftCards, giftCardEligible: streak >= 3, atRisk: missed === 1, reimbursementsPaused: missed >= 2 };
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────

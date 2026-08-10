@@ -255,6 +255,56 @@ export async function fetchStatusReports(fellowId?: string): Promise<StatusRepor
   return fellowId ? reports.filter((r) => r.fellow_id === fellowId) : reports;
 }
 
+export async function logStatusReport(data: {
+  fellow_id: string;
+  fellow_name: string;
+  month: string;
+  late: boolean;
+  date_submitted: string;
+  notes?: string;
+}): Promise<boolean> {
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const rows = await getSheetValues('Status Reports');
+
+  // Check if a record for this fellow+month already exists and update it
+  // rows[0]=warning, rows[1]=headers, rows[2+]=data
+  for (let i = 2; i < rows.length; i++) {
+    if (rows[i][1] === data.fellow_id && rows[i][3] === data.month) {
+      const rowNum = i + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `Status Reports!E${rowNum}:H${rowNum}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [['TRUE', data.date_submitted, data.notes || '', data.late ? 'TRUE' : 'FALSE']],
+        },
+      });
+      return true;
+    }
+  }
+
+  // No existing record — append a new row
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'Status Reports',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+      values: [[
+        newId(),
+        data.fellow_id,
+        data.fellow_name,
+        data.month,
+        'TRUE',
+        data.date_submitted,
+        data.notes || '',
+        data.late ? 'TRUE' : 'FALSE',
+      ]],
+    },
+  });
+  return true;
+}
+
 // ── Alumni ──────────────────────────────────────────────────────────────────
 
 export async function fetchAlumni(): Promise<Alumni[]> {

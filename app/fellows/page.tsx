@@ -175,6 +175,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
   const [moveSaving, setMoveSaving] = useState(false);
   const [moveDone, setMoveDone] = useState(false);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [showLogReport, setShowLogReport] = useState(false);
+  const [logReportForm, setLogReportForm] = useState({ month: '', late: false, date_submitted: todayStr, notes: '' });
+  const [logReportSaving, setLogReportSaving] = useState(false);
+  const [logReportError, setLogReportError] = useState('');
+
   // Onboarding state — auto-mark all complete if the fellow has already started
   const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
   const isAlreadyStarted = !!fellow.start_date && new Date(fellow.start_date) <= new Date();
@@ -244,6 +250,33 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
     reports.filter(r => r.submitted).forEach(r => { m[r.month] = r; });
     return m;
   }, [reports]);
+
+  async function handleLogReport() {
+    if (!logReportForm.month) { setLogReportError('Please select a month.'); return; }
+    setLogReportSaving(true);
+    setLogReportError('');
+    const res = await fetch('/api/status-reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fellow_id: fellow.id,
+        fellow_name: fellow.name,
+        month: logReportForm.month,
+        late: logReportForm.late,
+        date_submitted: logReportForm.date_submitted,
+        notes: logReportForm.notes,
+        report_start_date: fellow.report_start_date,
+        report_end_month: fellow.report_end_month,
+      }),
+    });
+    setLogReportSaving(false);
+    if (!res.ok) { setLogReportError('Failed to save. Please try again.'); return; }
+    // Refresh reports
+    const updated = await fetch(`/api/status-reports?fellowId=${fellow.id}`).then(r => r.json());
+    if (Array.isArray(updated)) setReports(updated);
+    setShowLogReport(false);
+    setLogReportForm({ month: '', late: false, date_submitted: todayStr, notes: '' });
+  }
 
   const days = daysSince(fellow.last_check_in);
   const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
@@ -415,10 +448,88 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
                 <p className="text-sm text-gray-400">Loading reports…</p>
               ) : (
                 <>
+                  {/* Log Report Modal */}
+                  {showLogReport && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowLogReport(false)}>
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-base font-semibold text-gray-900 mb-4">Log Status Report</h3>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
+                            <select
+                              value={logReportForm.month}
+                              onChange={e => setLogReportForm(f => ({ ...f, month: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                            >
+                              <option value="">Select month…</option>
+                              {requiredMonths.map(m => (
+                                <option key={m} value={m}>{m}{submittedMap[m] ? ' (already logged)' : ''}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Date Submitted</label>
+                            <input
+                              type="date"
+                              value={logReportForm.date_submitted}
+                              onChange={e => setLogReportForm(f => ({ ...f, date_submitted: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-2">Submission timing</label>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setLogReportForm(f => ({ ...f, late: false }))}
+                                className={`flex-1 py-2 text-sm rounded-lg font-medium border transition-colors ${!logReportForm.late ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                              >
+                                ✅ On Time
+                              </button>
+                              <button
+                                onClick={() => setLogReportForm(f => ({ ...f, late: true }))}
+                                className={`flex-1 py-2 text-sm rounded-lg font-medium border transition-colors ${logReportForm.late ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                              >
+                                ⏰ Late
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                            <input
+                              type="text"
+                              value={logReportForm.notes}
+                              onChange={e => setLogReportForm(f => ({ ...f, notes: e.target.value }))}
+                              placeholder="e.g. submitted via email"
+                              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                            />
+                          </div>
+                          {logReportError && <p className="text-xs text-red-600">{logReportError}</p>}
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={() => setShowLogReport(false)} className="flex-1 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                            <button
+                              onClick={handleLogReport}
+                              disabled={logReportSaving}
+                              className="flex-1 py-2 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700 disabled:opacity-50"
+                            >
+                              {logReportSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-end mb-3">
+                    <button
+                      onClick={() => { setLogReportForm({ month: '', late: false, date_submitted: todayStr, notes: '' }); setLogReportError(''); setShowLogReport(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-700 transition-colors"
+                    >
+                      + Log Report
+                    </button>
+                  </div>
                   {(streakInfo.streak > 0 || streakInfo.atRisk || streakInfo.reimbursementsPaused) && (
                     <div className="flex flex-wrap gap-1.5 mb-4">
                       {streakInfo.streak > 0 && <Badge label={`🔥 Streak: ${streakInfo.streak}`} bg="bg-orange-100" text="text-orange-800" />}
-                      {streakInfo.giftCardEligible && <Badge label="🎁 Gift Card Earned!" bg="bg-green-100" text="text-green-800" />}
+                      {streakInfo.giftCardEligible && <Badge label={`🎁 Gift Card Earned! (${streakInfo.giftCards})`} bg="bg-green-100" text="text-green-800" />}
                       {streakInfo.atRisk && <Badge label="⚠️ At Risk" bg="bg-yellow-100" text="text-yellow-800" />}
                       {streakInfo.reimbursementsPaused && <Badge label="🚫 Reimbursements Paused" bg="bg-red-100" text="text-red-800" />}
                     </div>

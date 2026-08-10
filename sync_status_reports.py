@@ -9,9 +9,16 @@ attributed to the target month and flagged as late=TRUE. This prevents
 double-counting when a fellow submits late (e.g. April 3rd for their March
 report) and later submits their actual April report.
 
+Deadline: normally 8:59:59 AM on the 1st of the following month. If the last
+calendar day of the month falls on a Saturday or Sunday, the deadline extends
+to 8:59:59 AM the following Monday — pushed further still if that Monday (or
+any subsequent day) is a US federal holiday.
+
 Usage:
     python sync_status_reports.py               # syncs previous month
     python sync_status_reports.py 2026 3        # syncs a specific year/month
+
+Requires: pip install pytz gspread google-auth holidays
 
 Credentials are read from the .env.local file in this folder (same file
 the Next.js app uses). You must also add FORM_RESPONSES_URL to .env.local
@@ -26,8 +33,15 @@ import calendar
 import uuid
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from pathlib import Path
+
+try:
+    import holidays as _holidays_pkg
+except ImportError:
+    _holidays_pkg = None
+    print("WARNING: 'holidays' package not installed (pip install holidays). "
+          "Weekend deadline extensions will not check for US federal holidays.")
 
 
 # ── Load credentials from .env.local ─────────────────────────────────────────
@@ -147,6 +161,40 @@ except ImportError:
         return dt.astimezone(_EST_OFFSET)
 
 
+# ── Deadline computation ──────────────────────────────────────────────────────
+
+def _is_us_federal_holiday(d: date) -> bool:
+    """True if `d` is a US federal holiday. Returns False (fail open) if the
+    'holidays' package isn't installed, rather than blocking the sync."""
+    if _holidays_pkg is None:
+        return False
+    return d in _holidays_pkg.US(years=[d.year])
+
+
+def _deadline_date(year: int, month: int, last_day: int) -> date:
+    """
+    Normally the deadline is the 1st of the following month. But if the last
+    calendar day of the target month falls on a weekend, fellows get until
+    the following Monday instead — pushed further if that Monday (or any
+    subsequent day) is a US federal holiday.
+    """
+    last_date = date(year, month, last_day)
+
+    if last_date.weekday() < 5:  # Mon–Fri: normal case, no extension
+        return last_date + timedelta(days=1)
+
+    # Saturday (5) -> +2 days to Monday; Sunday (6) -> +1 day to Monday.
+    offset = 2 if last_date.weekday() == 5 else 1
+    candidate = last_date + timedelta(days=offset)
+
+    # Keep advancing past holidays (and, in the rare back-to-back case,
+    # past any weekend days too) until we land on a valid business day.
+    while candidate.weekday() >= 5 or _is_us_federal_holiday(candidate):
+        candidate += timedelta(days=1)
+
+    return candidate
+
+
 # ── Core sync logic ───────────────────────────────────────────────────────────
 
 def sync(year: int, month: int) -> dict:
@@ -171,12 +219,16 @@ def sync(year: int, month: int) -> dict:
     last_day    = calendar.monthrange(year, month)[1]
     month_label = datetime(year, month, 1).strftime("%b %Y")
 
-    # Deadline: 8:59:59 AM on the 1st of the following month.
-    # Submissions up to 9 AM on the 1st count as on time.
-    if month == 12:
-        deadline = _localize(datetime(year + 1, 1, 1, 8, 59, 59))
-    else:
-        deadline = _localize(datetime(year, month + 1, 1, 8, 59, 59))
+    # Deadline: 8:59:59 AM on the day after the last day of the month.
+    # If that last day falls on a weekend, the deadline extends to 8:59:59 AM
+    # the following Monday (or later, if Monday is a US federal holiday).
+    deadline_date = _deadline_date(year, month, last_day)
+    deadline = _localize(datetime(
+        deadline_date.year, deadline_date.month, deadline_date.day, 8, 59, 59
+    ))
+    if deadline_date != date(year, month, last_day) + timedelta(days=1):
+        print(f"Note: {month_label} ends on a weekend — deadline extended to "
+              f"{deadline_date.strftime('%A, %b %d, %Y')} 9:00 AM EST.")
 
     # Window start: day (GRACE_DAYS + 1) of the target month.
     # Days 1–GRACE_DAYS of month M belong exclusively to month M-1's grace
@@ -335,7 +387,10 @@ def sync(year: int, month: int) -> dict:
         fellow_name    = response["fellow_name"]
         date_submitted = _to_est(response["timestamp"]).strftime("%Y-%m-%d")
         is_late        = response["late"]
-        notes          = "" if not is_late else "⚠️ Submitted after month-end deadline (11:59 PM EST)"
+        notes          = "" if not is_late else (
+            f"⚠️ Submitted after deadline "
+            f"({deadline.strftime('%a %b %d, %Y')} 9:00 AM EST)"
+        )
         late_str       = "TRUE" if is_late else "FALSE"
 
         report_key = (fellow_id, month_label)
