@@ -12,10 +12,9 @@ const PARTY_BG: Record<string, string> = {
 };
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Government:           { bg: 'bg-blue-100',    text: 'text-blue-800' },
-  'Policy/Think Tank': { bg: 'bg-green-100', text: 'text-green-800' },
+  'Policy/Think Tank':  { bg: 'bg-cyan-100',    text: 'text-cyan-800' },
   Academia:             { bg: 'bg-purple-100',  text: 'text-purple-800' },
   Private:              { bg: 'bg-orange-100',  text: 'text-orange-800' },
-  'Policy/Think Tank':  { bg: 'bg-cyan-100',    text: 'text-cyan-800' },
 };
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
