@@ -1,7 +1,8 @@
 import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
-import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment } from '@/types';
+import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase } from '@/types';
+import { sortHistory } from '@/lib/career-pathway';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -57,6 +58,55 @@ function toBool(val: string): boolean {
   return val?.toLowerCase() === 'true';
 }
 
+/**
+ * 0-indexed column number → A1 column letter. Handles past Z (26 → "AA"),
+ * which `String.fromCharCode(65 + i)` silently gets wrong once a tab grows
+ * past 26 columns — which the new Career Pathway columns push the Fellows tab
+ * close to.
+ */
+function columnLetter(index: number): string {
+  let n = index;
+  let out = '';
+  while (n >= 0) {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  }
+  return out;
+}
+
+/**
+ * Read a tab's values, returning null instead of throwing when the tab does
+ * not exist yet. Lets Career Pathway features degrade to a "not set up yet"
+ * state rather than 500-ing the whole page.
+ */
+async function getSheetValuesSafe(sheetName: string): Promise<string[][] | null> {
+  try {
+    return await getSheetValues(sheetName);
+  } catch (err) {
+    const msg = String((err as Error)?.message || err);
+    if (/Unable to parse range|not found/i.test(msg)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Parse a Google Sheets multi-select (chips) cell into a tag list. The Sheets
+ * API returns chip values as a comma-separated string; newline-separated and
+ * single-value cells are handled too.
+ */
+export function parseTags(cell: string | undefined): string[] {
+  if (!cell) return [];
+  return cell
+    .split(/[,\n]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .filter((t, i, arr) => arr.indexOf(t) === i);
+}
+
+function serializeTags(tags: string[] | undefined): string {
+  return Array.isArray(tags) ? tags.filter(Boolean).join(', ') : '';
+}
+
 export async function fetchFellows(): Promise<Fellow[]> {
   const rows = await getSheetValues('Fellows');
   const records = rowsToObjects(rows);
@@ -85,6 +135,10 @@ export async function fetchFellows(): Promise<Fellow[]> {
     report_end_month: r['Report End Month'] || '',
     onboarding_completed: r['Onboarding Completed Tasks'] || '',
     offboarding_completed: r['Offboarding Completed Tasks'] || '',
+    // Career Pathway columns — absent until the columns are added to the tab,
+    // in which case these read as empty rather than breaking the fetch.
+    policy_areas: parseTags(r[FELLOW_POLICY_AREAS_COL]),
+    target_pathways: parseTags(r[FELLOW_TARGET_PATHWAYS_COL]),
   }));
 }
 
@@ -114,6 +168,8 @@ function fellowDataMap(id: string, d: Partial<Fellow>): Record<string, string> {
     'Report End Month': d.report_end_month || '',
     'Onboarding Completed Tasks': d.onboarding_completed || '',
     'Offboarding Completed Tasks': d.offboarding_completed || '',
+    [FELLOW_POLICY_AREAS_COL]: serializeTags(d.policy_areas),
+    [FELLOW_TARGET_PATHWAYS_COL]: serializeTags(d.target_pathways),
   };
 }
 
@@ -149,7 +205,7 @@ export async function updateFellow(id: string, data: Partial<Fellow>): Promise<b
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
   if (!rowNum) return false;
-  const lastCol = String.fromCharCode(64 + headers.length);
+  const lastCol = columnLetter(headers.length - 1);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `Fellows!A${rowNum}:${lastCol}${rowNum}`,
@@ -167,7 +223,7 @@ export async function updateFellowOnboarding(id: string, completed: string): Pro
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
   if (!rowNum) return false;
-  const colLetter = String.fromCharCode(65 + colIndex);
+  const colLetter = columnLetter(colIndex);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `Fellows!${colLetter}${rowNum}`,
@@ -185,7 +241,7 @@ export async function updateFellowOffboarding(id: string, completed: string): Pr
   const spreadsheetId = getSpreadsheetId();
   const rowNum = await findRowById('Fellows', id);
   if (!rowNum) return false;
-  const colLetter = String.fromCharCode(65 + colIndex);
+  const colLetter = columnLetter(colIndex);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `Fellows!${colLetter}${rowNum}`,
@@ -332,6 +388,8 @@ export async function fetchAlumni(): Promise<Alumni[]> {
     education: r['Education'] || '',
     served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
     currently_on_hill: toBool(r['Currently on the Hill?']),
+    policy_areas: parseTags(r[ALUMNI_POLICY_AREAS_COL]),
+    realized_pathway: (r[ALUMNI_REALIZED_PATHWAY_COL] || '').trim(),
   }));
 }
 
@@ -390,6 +448,8 @@ function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
     'Last Engaged': d.last_engaged || '',
     'Engagement Notes': d.engagement_notes || '',
     'Notes': d.notes || '',
+    [ALUMNI_POLICY_AREAS_COL]: serializeTags(d.policy_areas),
+    [ALUMNI_REALIZED_PATHWAY_COL]: (d.realized_pathway || '').trim(),
   };
 }
 
@@ -424,7 +484,7 @@ export async function updateAlumni(id: string, data: Partial<Alumni>): Promise<b
   const sheets = await getSheetsClient();
   const rowNum = await findRowById('Alumni', id);
   if (!rowNum) return false;
-  const lastCol = String.fromCharCode(64 + headers.length); // e.g. 21 cols → U
+  const lastCol = columnLetter(headers.length - 1); // e.g. 21 cols → U
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
     range: `Alumni!A${rowNum}:${lastCol}${rowNum}`,
@@ -828,4 +888,324 @@ export async function saveAttendanceBatch(
     });
   }
   return true;
+}
+
+// ── Career Pathway Engine ────────────────────────────────────────────────────
+//
+// Three new columns on existing tabs plus one new tab. None of them are
+// required: every read below tolerates a missing column or missing tab and
+// degrades to empty, and every write reports precisely which column is absent
+// so the UI can tell staff exactly what to add to the sheet.
+
+export const FELLOW_POLICY_AREAS_COL = 'Policy Issue Areas';
+export const FELLOW_TARGET_PATHWAYS_COL = 'Target Pathways';
+export const ALUMNI_POLICY_AREAS_COL = 'Policy Issue Areas';
+export const ALUMNI_REALIZED_PATHWAY_COL = 'Realized Pathway';
+export const CAREER_HISTORY_SHEET = 'Alumni Career History';
+
+export interface PathwaySetupStatus {
+  fellowsPolicyAreas: boolean;
+  fellowsTargetPathways: boolean;
+  alumniPolicyAreas: boolean;
+  alumniRealizedPathway: boolean;
+  careerHistoryTab: boolean;
+}
+
+/** Which Career Pathway columns/tabs actually exist right now. */
+export async function pathwaySetupStatus(): Promise<PathwaySetupStatus> {
+  const [fellowHeaders, alumniHeaders, historyRows] = await Promise.all([
+    getFellowHeaders().catch(() => [] as string[]),
+    getAlumniHeaders().catch(() => [] as string[]),
+    getSheetValuesSafe(CAREER_HISTORY_SHEET),
+  ]);
+  return {
+    fellowsPolicyAreas: fellowHeaders.includes(FELLOW_POLICY_AREAS_COL),
+    fellowsTargetPathways: fellowHeaders.includes(FELLOW_TARGET_PATHWAYS_COL),
+    alumniPolicyAreas: alumniHeaders.includes(ALUMNI_POLICY_AREAS_COL),
+    alumniRealizedPathway: alumniHeaders.includes(ALUMNI_REALIZED_PATHWAY_COL),
+    careerHistoryTab: historyRows !== null,
+  };
+}
+
+export interface ColumnWriteResult {
+  ok: boolean;
+  missingColumns: string[];
+}
+
+/**
+ * Write only the pathway cells for one person, leaving every other column
+ * untouched. Safer than rewriting the whole row (which is what the general
+ * update path does) and it makes a missing column an explicit, reportable
+ * outcome instead of a silently dropped value.
+ */
+async function writeNamedCells(
+  sheetName: string,
+  headers: string[],
+  rowNum: number,
+  values: Record<string, string>
+): Promise<ColumnWriteResult> {
+  const missingColumns: string[] = [];
+  const data: { range: string; values: string[][] }[] = [];
+  for (const [header, value] of Object.entries(values)) {
+    const idx = headers.indexOf(header);
+    if (idx === -1) { missingColumns.push(header); continue; }
+    data.push({ range: `${sheetName}!${columnLetter(idx)}${rowNum}`, values: [[value]] });
+  }
+  if (data.length > 0) {
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: getSpreadsheetId(),
+      requestBody: { valueInputOption: 'USER_ENTERED', data },
+    });
+  }
+  return { ok: missingColumns.length === 0, missingColumns };
+}
+
+export async function updateFellowPathway(
+  id: string,
+  policyAreas: string[],
+  targetPathways: string[]
+): Promise<ColumnWriteResult> {
+  const headers = await getFellowHeaders();
+  const rowNum = await findRowById('Fellows', id);
+  if (!rowNum) return { ok: false, missingColumns: [] };
+  return writeNamedCells('Fellows', headers, rowNum, {
+    [FELLOW_POLICY_AREAS_COL]: serializeTags(policyAreas),
+    [FELLOW_TARGET_PATHWAYS_COL]: serializeTags(targetPathways),
+  });
+}
+
+export async function updateAlumniPathway(
+  id: string,
+  policyAreas: string[],
+  realizedPathway: string
+): Promise<ColumnWriteResult> {
+  const headers = await getAlumniHeaders();
+  const rowNum = await findRowById('Alumni', id);
+  if (!rowNum) return { ok: false, missingColumns: [] };
+  return writeNamedCells('Alumni', headers, rowNum, {
+    [ALUMNI_POLICY_AREAS_COL]: serializeTags(policyAreas),
+    [ALUMNI_REALIZED_PATHWAY_COL]: (realizedPathway || '').trim(),
+  });
+}
+
+// ── Alumni Career History tab ────────────────────────────────────────────────
+
+/**
+ * Accepted header spellings per logical field. The tab was created by hand, so
+ * we match on any reasonable variant rather than assuming exact strings or a
+ * fixed column order.
+ */
+const HISTORY_HEADER_ALIASES: Record<string, string[]> = {
+  id:     ['ID', 'Id', 'Person ID', 'Alumni ID', 'Fellow ID'],
+  name:   ['Name', 'Person', 'Alumni Name', 'Fellow Name'],
+  order:  ['Order', 'Sort Order'],
+  phase:  ['Phase'],
+  org:    ['Organization', 'Org', 'Employer'],
+  title:  ['Title', 'Role', 'Position'],
+  sector: ['Sector'],
+  start:  ['Start Date', 'Start'],
+  end:    ['End Date', 'End'],
+  notes:  ['Notes', 'Note'],
+};
+
+interface HistorySheetShape {
+  rows: string[][];
+  headers: string[];
+  headerRow: number;   // 0-indexed row holding the headers
+  cols: Record<string, number>;  // logical field → 0-indexed column
+}
+
+/**
+ * Locate the header row. Other tabs in this workbook put a "do not edit"
+ * banner in row 1 and headers in row 2, but this tab was created separately,
+ * so we detect rather than assume.
+ */
+function readHistorySheet(rows: string[][]): HistorySheetShape | null {
+  let headerRow = -1;
+  for (let i = 0; i < Math.min(rows.length, 3); i++) {
+    const cells = (rows[i] || []).map((c) => (c || '').trim().toLowerCase());
+    if (HISTORY_HEADER_ALIASES.id.some((a) => cells.includes(a.toLowerCase()))) { headerRow = i; break; }
+  }
+  if (headerRow === -1) return null;
+  const headers = (rows[headerRow] || []).map((h) => (h || '').trim());
+  const lower = headers.map((h) => h.toLowerCase());
+  const cols: Record<string, number> = {};
+  for (const [field, aliases] of Object.entries(HISTORY_HEADER_ALIASES)) {
+    cols[field] = aliases.map((a) => lower.indexOf(a.toLowerCase())).find((i) => i >= 0) ?? -1;
+  }
+  return { rows, headers, headerRow, cols };
+}
+
+function rowToEntry(row: string[], cols: Record<string, number>): CareerHistoryEntry {
+  const at = (field: string) => (cols[field] >= 0 ? (row[cols[field]] || '').trim() : '');
+  return {
+    person_id: at('id'),
+    person_name: at('name'),
+    order: parseInt(at('order'), 10) || 0,
+    phase: (at('phase') || 'Post-Fellowship') as CareerPhase,
+    org: at('org'),
+    title: at('title'),
+    sector: at('sector'),
+    start: normalizeMonth(at('start')),
+    end: normalizeMonth(at('end')),
+    notes: at('notes'),
+  };
+}
+
+/**
+ * Coerce whatever the sheet holds into "YYYY-MM". Accepts "2024-09",
+ * "2024-09-01", "9/2024", "Sep 2024". Anything unparseable is passed through
+ * untouched so a human can see and fix it rather than having it disappear.
+ */
+function normalizeMonth(value: string): string {
+  if (!value) return '';
+  const v = value.trim();
+  let m = v.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\/(?:\d{1,2}\/)?(\d{4})$/);
+  if (m) return `${m[2]}-${m[1].padStart(2, '0')}`;
+  const parsed = new Date(`${v} 1`);
+  if (!isNaN(parsed.getTime()) && /[A-Za-z]/.test(v)) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return v;
+}
+
+export interface CareerHistoryResult {
+  available: boolean;               // false = the tab doesn't exist yet
+  entries: CareerHistoryEntry[];
+  missingColumns: string[];
+}
+
+/** Read career history, optionally for one person. Always Start-Date sorted. */
+export async function fetchCareerHistory(personId?: string): Promise<CareerHistoryResult> {
+  const rows = await getSheetValuesSafe(CAREER_HISTORY_SHEET);
+  if (rows === null) return { available: false, entries: [], missingColumns: [] };
+  const shape = readHistorySheet(rows);
+  if (!shape) return { available: false, entries: [], missingColumns: [] };
+
+  const missingColumns = Object.entries(shape.cols)
+    .filter(([, i]) => i === -1)
+    .map(([field]) => HISTORY_HEADER_ALIASES[field][0]);
+
+  const entries = rows
+    .slice(shape.headerRow + 1)
+    .map((r) => rowToEntry(r, shape.cols))
+    .filter((e) => e.person_id && (e.title || e.org));
+
+  const filtered = personId ? entries.filter((e) => e.person_id === personId) : entries;
+  return { available: true, entries: sortHistory(filtered), missingColumns };
+}
+
+/**
+ * Replace one person's career history with `entries`, touching nobody else's
+ * rows. Entries are re-sorted by Start Date and `Order` is recomputed as
+ * 1..n — there is deliberately no user-facing Order field to maintain.
+ *
+ * Existing rows for the person are updated in place, extras are appended, and
+ * any surplus rows are deleted bottom-up so earlier row indices stay valid.
+ */
+export async function saveCareerHistory(
+  personId: string,
+  personName: string,
+  entries: Partial<CareerHistoryEntry>[]
+): Promise<{ ok: boolean; available: boolean; saved: number }> {
+  const rows = await getSheetValuesSafe(CAREER_HISTORY_SHEET);
+  if (rows === null) return { ok: false, available: false, saved: 0 };
+  const shape = readHistorySheet(rows);
+  if (!shape) return { ok: false, available: false, saved: 0 };
+
+  const clean = sortHistory(
+    entries
+      .filter((e) => (e.title || '').trim() || (e.org || '').trim())
+      .map((e) => ({
+        phase: (e.phase || 'Post-Fellowship') as CareerPhase,
+        title: (e.title || '').trim(),
+        org: (e.org || '').trim(),
+        sector: (e.sector || '').trim(),
+        start: normalizeMonth(e.start || ''),
+        // "Current" means ongoing, so it never carries an end date.
+        end: e.phase === 'Current' ? '' : normalizeMonth(e.end || ''),
+        notes: (e.notes || '').trim(),
+        order: 0,
+      }))
+  ).map((e, i) => ({ ...e, order: i + 1 }));
+
+  const width = Math.max(shape.headers.length, ...Object.values(shape.cols).map((i) => i + 1));
+  const buildRow = (e: (typeof clean)[number]): string[] => {
+    const row = new Array<string>(width).fill('');
+    const put = (field: string, value: string) => {
+      const i = shape.cols[field];
+      if (i >= 0) row[i] = value;
+    };
+    put('id', personId);
+    put('name', personName);
+    put('order', String(e.order));
+    put('phase', e.phase);
+    put('org', e.org);
+    put('title', e.title);
+    put('sector', e.sector);
+    put('start', e.start);
+    put('end', e.end);
+    put('notes', e.notes);
+    return row;
+  };
+
+  // 1-indexed sheet rows currently belonging to this person
+  const idCol = shape.cols.id;
+  const existingRowNums: number[] = [];
+  for (let i = shape.headerRow + 1; i < rows.length; i++) {
+    if ((rows[i]?.[idCol] || '').trim() === personId) existingRowNums.push(i + 1);
+  }
+
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const lastCol = columnLetter(width - 1);
+
+  const overwriteCount = Math.min(existingRowNums.length, clean.length);
+  const data = clean.slice(0, overwriteCount).map((e, i) => ({
+    range: `${CAREER_HISTORY_SHEET}!A${existingRowNums[i]}:${lastCol}${existingRowNums[i]}`,
+    values: [buildRow(e)],
+  }));
+  if (data.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: 'USER_ENTERED', data },
+    });
+  }
+
+  const toAppend = clean.slice(overwriteCount).map(buildRow);
+  if (toAppend.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: CAREER_HISTORY_SHEET,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: toAppend },
+    });
+  }
+
+  const surplus = existingRowNums.slice(clean.length);
+  if (surplus.length > 0) {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetId = meta.data.sheets?.find((s) => s.properties?.title === CAREER_HISTORY_SHEET)?.properties?.sheetId;
+    if (sheetId != null) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: surplus
+            .slice()
+            .sort((a, b) => b - a)  // delete bottom-up so earlier indices stay valid
+            .map((rowNum) => ({
+              deleteDimension: {
+                range: { sheetId, dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum },
+              },
+            })),
+        },
+      });
+    }
+  }
+
+  return { ok: true, available: true, saved: clean.length };
 }

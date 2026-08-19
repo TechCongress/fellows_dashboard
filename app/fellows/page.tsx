@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
 import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
+import { FellowPathwayTab } from '@/components/pathway-ui';
 
 type SortOption = 'Cohort (newest first)' | 'Cohort (oldest first)' | 'Priority (Flagged first)' | 'Name (A–Z)' | 'Name (Z–A)' | 'Last Check-in (oldest first)' | 'Last Check-in (newest first)' | 'End Date (soonest first)' | 'End Date (latest first)';
 
@@ -151,7 +152,7 @@ const ONBOARDING_TASKS: { label: string; link?: string }[] = [
   { label: 'Send Placement Intake Form' },
 ];
 
-type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'reports' | 'checkins' | 'offboarding';
+type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'pathway' | 'reports' | 'checkins' | 'offboarding';
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -298,6 +299,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
     { key: 'contact', label: 'Contact' },
     { key: 'placement', label: 'Placement' },
     { key: 'background', label: 'Background' },
+    { key: 'pathway', label: 'Career Pathway' },
     { key: 'reports', label: 'Status Reports' },
     { key: 'checkins', label: 'Check-ins' },
     { key: 'offboarding', label: (
@@ -438,6 +440,10 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
               )}
               {!fellow.prior_role && !fellow.education && !fellow.notes && <p className="text-sm text-gray-400">No background info on record.</p>}
             </div>
+          )}
+
+          {tab === 'pathway' && (
+            <FellowPathwayTab fellow={fellow} onFellowUpdate={onFellowUpdate} />
           )}
 
           {tab === 'reports' && (

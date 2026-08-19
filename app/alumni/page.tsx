@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Alumni, Accomplishment } from '@/types';
 import { parseCohortDate } from '@/lib/helpers';
+import { CareerHistorySection } from '@/components/career-history';
+import { AlumniPathwayTab } from '@/components/pathway-ui';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +155,10 @@ function AlumniCard({ alumni, onView, onEdit }: { alumni: Alumni; onView: () => 
 
 // ── Alumni Modal ──────────────────────────────────────────────────────────────
 
-type ModalTab = 'contact' | 'fellowship' | 'background' | 'current' | 'engagement' | 'accomplishments';
+// "Background" and "Current Info" were merged into one tab: an alum's current
+// role and sector now live inside the career timeline (the Phase = "Current"
+// entry), so they no longer exist as standalone modal fields.
+type ModalTab = 'contact' | 'fellowship' | 'background' | 'pathway' | 'engagement' | 'accomplishments';
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -175,7 +180,7 @@ const CF_STYLES: Record<string, { bg: string; text: string }> = {
   'Tier 3': { bg: 'bg-slate-100',  text: 'text-slate-700' },
 };
 
-function AlumniModal({ alumni, onClose, onEdit }: { alumni: Alumni; onClose: () => void; onEdit: () => void }) {
+function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alumni; onClose: () => void; onEdit: () => void; onAlumniUpdate?: (updated: Alumni) => void }) {
   const [tab, setTab] = useState<ModalTab>('contact');
   const [accomplishments, setAccomplishments] = useState<Accomplishment[]>([]);
   const [acLoading, setAcLoading] = useState(false);
@@ -199,8 +204,8 @@ function AlumniModal({ alumni, onClose, onEdit }: { alumni: Alumni; onClose: () 
   const TABS: { key: ModalTab; label: string }[] = [
     { key: 'contact', label: 'Contact' },
     { key: 'fellowship', label: 'Fellowship' },
-    { key: 'background', label: 'Background' },
-    { key: 'current', label: 'Current Info' },
+    { key: 'background', label: 'Background & Career History' },
+    { key: 'pathway', label: 'Career Pathway' },
     { key: 'engagement', label: 'Engagement' },
     { key: 'accomplishments', label: 'Accomplishments' },
   ];
@@ -255,20 +260,16 @@ function AlumniModal({ alumni, onClose, onEdit }: { alumni: Alumni; onClose: () 
             </dl>
           )}
           {tab === 'background' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
+              <CareerHistorySection personId={alumni.id} personName={alumni.name} />
               {alumni.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{alumni.prior_role}</p></div>}
               {alumni.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{alumni.education}</p></div>}
               {alumni.notes && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Notes</h3><div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 leading-relaxed">{alumni.notes}</div></div>}
-              {!alumni.prior_role && !alumni.education && !alumni.notes && <p className="text-sm text-gray-400">No background info on record.</p>}
+              {alumni.location && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Location</h3><p className="text-sm text-gray-700">{alumni.location}</p></div>}
             </div>
           )}
-          {tab === 'current' && (
-            <dl className="space-y-3">
-              {alumni.current_role && <InfoRow label="Current Role" value={alumni.current_role} />}
-              {alumni.sector && <InfoRow label="Sector" value={(() => { const c = SECTOR_COLORS[alumni.sector] || { bg: 'bg-gray-100', text: 'text-gray-600' }; return <Badge label={alumni.sector} {...c} />; })()} />}
-              {alumni.location && <InfoRow label="Location" value={alumni.location} />}
-              {!alumni.current_role && !alumni.sector && !alumni.location && <p className="text-sm text-gray-400">No current info on record.</p>}
-            </dl>
+          {tab === 'pathway' && (
+            <AlumniPathwayTab alumni={alumni} onAlumniUpdate={onAlumniUpdate} />
           )}
           {tab === 'engagement' && (
             <div className="space-y-4">
@@ -693,7 +694,17 @@ export default function AlumniPage() {
         )}
       </main>
 
-      {viewing && <AlumniModal alumni={viewing} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setShowForm(true); setViewing(null); }} />}
+      {viewing && (
+        <AlumniModal
+          alumni={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(viewing); setShowForm(true); setViewing(null); }}
+          onAlumniUpdate={(updated) => {
+            setViewing(updated);
+            setAlumni(list => list.map(a => (a.id === updated.id ? updated : a)));
+          }}
+        />
+      )}
       {showForm && <AlumniForm alumni={editing} onClose={() => { setShowForm(false); setEditing(undefined); }} onSaved={load} />}
     </div>
   );

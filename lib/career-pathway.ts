@@ -1,0 +1,263 @@
+/**
+ * Career Pathway Engine
+ * ─────────────────────
+ * Policy issue areas, target/realized post-fellowship pathways, and the
+ * alumni-matching logic that ranks alumni against a given fellow.
+ *
+ * IMPORTANT — two separate taxonomies, do not conflate:
+ *   • The Accomplishments Matrix has its own 11-tag policy taxonomy. It is a
+ *     different system with a different owner. Nothing here reads from it.
+ *   • POLICY_AREAS below (37 tags, 8 categories) is the Career Pathway
+ *     taxonomy, used for Fellows and Alumni tagging only. It is backed by its
+ *     own Google Sheets column and its own dropdown source range.
+ */
+
+import { Alumni, Fellow, CareerPhase, AlumniMatch } from '@/types';
+
+// ── Tag limits ───────────────────────────────────────────────────────────────
+
+export const MAX_POLICY_AREAS = 3;      // fellows and alumni both capped at 3
+export const MAX_TARGET_PATHWAYS = 2;
+
+// ── Policy issue areas (37 tags / 8 categories) ──────────────────────────────
+
+export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
+  { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Emerging Technologies', 'Digital Infrastructure', 'Open Source & Software Policy'] },
+  { group: 'Health & Science', tags: ['Digital Health & Health IT', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy', 'Nuclear Policy'] },
+  { group: 'National Security & Defense', tags: ['Defense Technology', 'Intelligence & Surveillance', 'Election Security', 'Critical Infrastructure Protection'] },
+  { group: 'Economy & Labor', tags: ['Future of Work & Automation', 'Financial Technology', 'Antitrust & Competition Policy', 'Workforce Development'] },
+  { group: 'Environment & Energy', tags: ['Climate Technology', 'Clean Energy', 'Energy Grid & Infrastructure'] },
+  { group: 'Governance & Democracy', tags: ['Government Technology', 'Election Administration', 'Disinformation & Media Policy', 'Open Government & Transparency'] },
+  { group: 'Social Policy', tags: ['Education Technology', 'Housing & Urban Tech', 'Criminal Justice & Technology', 'Accessibility & Disability Policy', 'Immigration & Technology'] },
+  { group: 'International', tags: ['Tech Diplomacy', 'Trade & Technology Policy', 'International Cyber Policy'] },
+];
+
+export const POLICY_AREAS: string[] = POLICY_AREA_CATEGORIES.flatMap((c) => c.tags);
+
+/** Rotating chip palette, keyed by the tag's index in the flat taxonomy. */
+const TAG_PALETTE = [
+  { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+  { bg: 'bg-cyan-100', text: 'text-cyan-800' },
+  { bg: 'bg-teal-100', text: 'text-teal-800' },
+  { bg: 'bg-orange-100', text: 'text-orange-800' },
+  { bg: 'bg-pink-100', text: 'text-pink-800' },
+  { bg: 'bg-amber-100', text: 'text-amber-800' },
+  { bg: 'bg-lime-100', text: 'text-lime-800' },
+  { bg: 'bg-violet-100', text: 'text-violet-800' },
+  { bg: 'bg-sky-100', text: 'text-sky-800' },
+  { bg: 'bg-rose-100', text: 'text-rose-800' },
+  { bg: 'bg-emerald-100', text: 'text-emerald-800' },
+];
+
+export function policyAreaColors(tag: string): { bg: string; text: string } {
+  const i = POLICY_AREAS.indexOf(tag);
+  if (i < 0) return { bg: 'bg-gray-100', text: 'text-gray-700' };
+  return TAG_PALETTE[i % TAG_PALETTE.length];
+}
+
+// ── Target / realized pathways (8 fixed tags) ────────────────────────────────
+
+export interface PathwayTag {
+  tag: string;
+  definition: string;
+  bg: string;
+  text: string;
+}
+
+export const PATHWAY_TAGS: PathwayTag[] = [
+  { tag: 'Stay in Congress', definition: 'Continues on the Hill — personal office, committee, or leadership staff.', bg: 'bg-blue-100', text: 'text-blue-800' },
+  { tag: 'Think Tank', definition: 'Policy research role at a think tank or research institute.', bg: 'bg-purple-100', text: 'text-purple-800' },
+  { tag: 'Executive Branch', definition: 'Agency role, political appointment, or detail in the executive branch.', bg: 'bg-cyan-100', text: 'text-cyan-800' },
+  { tag: 'Law School', definition: 'Pursuing a JD or other graduate legal study.', bg: 'bg-amber-100', text: 'text-amber-800' },
+  { tag: 'Private Sector', definition: 'Industry role — engineering, product, or government affairs at a company.', bg: 'bg-orange-100', text: 'text-orange-800' },
+  { tag: 'Academia', definition: 'Faculty, research, or graduate study track.', bg: 'bg-teal-100', text: 'text-teal-800' },
+  { tag: 'Elected Office', definition: 'Running for or serving in elected office.', bg: 'bg-rose-100', text: 'text-rose-800' },
+  { tag: 'Civil Society / Nonprofit', definition: 'Advocacy, civic tech, or nonprofit policy role.', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+];
+
+export const PATHWAY_NAMES: string[] = PATHWAY_TAGS.map((p) => p.tag);
+
+export function pathwayColors(tag: string): { bg: string; text: string } {
+  const p = PATHWAY_TAGS.find((x) => x.tag === tag);
+  return p ? { bg: p.bg, text: p.text } : { bg: 'bg-gray-100', text: 'text-gray-700' };
+}
+
+// ── Matching ─────────────────────────────────────────────────────────────────
+
+/**
+ * A target pathway implies a broad sector, used as a second matching signal
+ * that STACKS with an exact realized-pathway match.
+ *
+ * The Congress-vs-Executive-Branch split below exists ONLY inside this scoring
+ * logic. It is derived on the fly from the existing `currently_on_hill` flag
+ * and must never surface in the UI — badges, filters, and the "By Sector" pie
+ * chart all keep a single "Government" bucket. (Explicit product decision.)
+ */
+const PATHWAY_TO_SECTORS: Record<string, string[]> = {
+  'Stay in Congress': ['Government: Congress'],
+  'Executive Branch': ['Government: Executive Branch'],
+  'Elected Office': ['Government: Congress'],
+  'Think Tank': ['Policy/Think Tank'],
+  'Civil Society / Nonprofit': ['Policy/Think Tank'],
+  'Private Sector': ['Private'],
+  'Academia': ['Academia'],
+  'Law School': [],
+};
+
+function targetSectorsOf(targetPathways: string[]): string[] {
+  const set = new Set<string>();
+  for (const p of targetPathways) {
+    for (const s of PATHWAY_TO_SECTORS[p] || []) set.add(s);
+  }
+  return [...set];
+}
+
+/** Matching-only sector refinement. Does not change `alumni.sector` anywhere. */
+function effectiveSector(a: Alumni): string {
+  if (a.sector === 'Government') {
+    return a.currently_on_hill ? 'Government: Congress' : 'Government: Executive Branch';
+  }
+  return a.sector;
+}
+
+export const SCORE_WEIGHTS = { policyArea: 2, exactPathway: 3, sector: 2 };
+
+/**
+ * Score one alum against one fellow. Three independent signals, summed:
+ *   +2 per shared policy issue area
+ *   +3 for an exact realized-pathway ↔ target-pathway match
+ *   +2 for a sector match (stacks with the pathway match; the alum still
+ *      appears exactly once in the ranked list)
+ * Alumni marked "do not contact" are excluded entirely.
+ */
+export function matchScore(
+  fellowAreas: string[],
+  fellowTargets: string[],
+  a: Alumni
+): Omit<AlumniMatch, 'alumni' | 'reason'> {
+  if (a.contact === false) {
+    return { score: -1, overlap: [], pathwayMatch: false, sectorMatch: false };
+  }
+  const overlap = (fellowAreas || []).filter((t) => (a.policy_areas || []).includes(t));
+  const pathwayMatch = !!a.realized_pathway && (fellowTargets || []).includes(a.realized_pathway);
+  const sectorMatch = !!a.sector && targetSectorsOf(fellowTargets || []).includes(effectiveSector(a));
+  const score =
+    overlap.length * SCORE_WEIGHTS.policyArea +
+    (pathwayMatch ? SCORE_WEIGHTS.exactPathway : 0) +
+    (sectorMatch ? SCORE_WEIGHTS.sector : 0);
+  return { score, overlap, pathwayMatch, sectorMatch };
+}
+
+function matchReason(m: Omit<AlumniMatch, 'alumni' | 'reason'>, a: Alumni): string {
+  const bits: string[] = [];
+  if (m.overlap.length) bits.push(`shares ${m.overlap.join(' & ')}`);
+  if (m.pathwayMatch) bits.push(`realized pathway: ${a.realized_pathway}`);
+  if (m.sectorMatch) bits.push(`same sector: ${a.sector}`);
+  return bits.join(' · ') || 'shared policy interest';
+}
+
+/** Rank alumni for a fellow, highest score first. Returns [] if untagged. */
+export function rankAlumni(
+  fellowAreas: string[],
+  fellowTargets: string[],
+  alumni: Alumni[],
+  limit = 4
+): AlumniMatch[] {
+  if (!fellowAreas?.length && !fellowTargets?.length) return [];
+  return alumni
+    .map((a) => {
+      const m = matchScore(fellowAreas, fellowTargets, a);
+      return { alumni: a, ...m, reason: matchReason(m, a) };
+    })
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score || x.alumni.name.localeCompare(y.alumni.name))
+    .slice(0, limit);
+}
+
+// ── Intro email draft ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic template — nothing is auto-sent. The UI surfaces this as a
+ * copy-to-clipboard draft for a staff member to review and send manually.
+ */
+export function introDraft(
+  fellow: Pick<Fellow, 'name' | 'office' | 'policy_areas' | 'target_pathways'>,
+  alum: Pick<Alumni, 'name' | 'current_role'>,
+  overlap: string[],
+  senderName = ''
+): { subject: string; body: string } {
+  const topic = overlap[0] || (fellow.policy_areas || [])[0] || 'tech policy';
+  const target = (fellow.target_pathways || [])[0] || 'their next step';
+  const firstName = alum.name.split(' ')[0];
+  const subject = `Introduction — ${fellow.name} (current TC Fellow) x ${alum.name}`;
+  const body = [
+    `Hi ${firstName},`,
+    ``,
+    `Hope you're doing well! I wanted to connect you with ${fellow.name}, a current TechCongress fellow placed at ${fellow.office || 'the Hill'}, who's exploring a path toward ${target} after the fellowship and is especially focused on ${topic}.`,
+    ``,
+    `Given your work as ${alum.current_role || 'a TechCongress alum'}, I thought the two of you would have a lot to talk about. Would you be open to a short call in the next few weeks?`,
+    ``,
+    `Thanks so much,`,
+    senderName || '',
+  ].join('\n');
+  return { subject, body };
+}
+
+export function draftAsText(d: { subject: string; body: string }): string {
+  return `Subject: ${d.subject}\n\n${d.body}`;
+}
+
+export function mailtoHref(email: string, d: { subject: string; body: string }): string {
+  return `mailto:${email}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`;
+}
+
+// ── Career history ───────────────────────────────────────────────────────────
+
+export const CAREER_PHASES: CareerPhase[] = ['Pre-Fellowship', 'Fellowship', 'Post-Fellowship', 'Current'];
+
+/** Matches the dashboard's existing, user-visible Sector taxonomy exactly. */
+export const CAREER_SECTORS = ['Government', 'Policy/Think Tank', 'Private', 'Academia'];
+
+export const PHASE_STYLES: Record<CareerPhase, { dot: string; chipBg: string; chipText: string; cardBg: string; cardBorder: string }> = {
+  'Pre-Fellowship':  { dot: 'bg-gray-400',    chipBg: 'bg-gray-200',   chipText: 'text-gray-600',   cardBg: 'bg-gray-50',  cardBorder: 'border-gray-200' },
+  'Fellowship':      { dot: 'bg-violet-600',  chipBg: 'bg-violet-100', chipText: 'text-violet-700', cardBg: 'bg-gray-50',  cardBorder: 'border-gray-200' },
+  'Post-Fellowship': { dot: 'bg-blue-500',    chipBg: 'bg-blue-100',   chipText: 'text-blue-700',   cardBg: 'bg-gray-50',  cardBorder: 'border-gray-200' },
+  'Current':         { dot: 'bg-green-600',   chipBg: 'bg-green-100',  chipText: 'text-green-800',  cardBg: 'bg-green-50', cardBorder: 'border-green-200' },
+};
+
+export function phaseStyle(phase: string) {
+  return PHASE_STYLES[(phase as CareerPhase)] || PHASE_STYLES['Post-Fellowship'];
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "2024-09" → "Sep 2024". Empty end date renders as "Present". */
+export function formatMonth(value: string, emptyLabel = 'Present'): string {
+  if (!value) return emptyLabel;
+  const [y, m] = value.split('-');
+  const idx = parseInt(m, 10) - 1;
+  if (!y || isNaN(idx) || idx < 0 || idx > 11) return value;
+  return `${MONTH_NAMES[idx]} ${y}`;
+}
+
+export function dateRangeLabel(start: string, end: string): string {
+  return `${formatMonth(start, '—')} – ${formatMonth(end, 'Present')}`;
+}
+
+/**
+ * Display order is derived from Start Date, ascending — always. `order` is
+ * only ever an internal tie-breaker for same-month starts and is recomputed on
+ * every write, so nobody has to maintain it by hand.
+ */
+export function sortHistory<T extends { start: string; order?: number }>(entries: T[]): T[] {
+  return [...entries].sort((a, b) => {
+    const cmp = (a.start || '9999-99').localeCompare(b.start || '9999-99');
+    if (cmp !== 0) return cmp;
+    return (a.order ?? 0) - (b.order ?? 0);
+  });
+}
+
+/** The row tagged Phase = "Current" is the person's current role. */
+export function currentRoleOf<T extends { phase: string }>(entries: T[]): T | undefined {
+  return entries.find((e) => e.phase === 'Current');
+}
