@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
 import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase } from '@/types';
-import { sortHistory } from '@/lib/career-pathway';
+import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector } from '@/lib/career-pathway';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -377,7 +377,10 @@ export async function fetchAlumni(): Promise<Alumni[]> {
     chamber: r['Chamber'] || '',
     party: r['Party'] || '',
     current_role: r['Current Role'] || '',
-    sector: r['Sector'] || '',
+    // Renamed sector labels still in the sheet are mapped to the current one on
+    // read, so badges, filters, the pie chart, and matching all agree whether
+    // or not the spreadsheet has been updated yet.
+    sector: normalizeSector(r['Sector'] || ''),
     location: r['Location'] || '',
     contact: r['Contact?'] ? toBool(r['Contact?']) : true,
     linkedin: r['LinkedIn'] || '',
@@ -1046,7 +1049,7 @@ function rowToEntry(row: string[], cols: Record<string, number>): CareerHistoryE
     phase: (at('phase') || 'Post-Fellowship') as CareerPhase,
     org: at('org'),
     title: at('title'),
-    sector: at('sector'),
+    sector: normalizeSector(at('sector')),
     start: normalizeMonth(at('start')),
     end: normalizeMonth(at('end')),
     notes: at('notes'),
@@ -1070,6 +1073,68 @@ function normalizeMonth(value: string): string {
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
   }
   return v;
+}
+
+/**
+ * "2008-07" → "07/2008" for writing back to the sheet, which is far easier to
+ * scan by eye. Written with USER_ENTERED so Sheets stores a real date value
+ * (sortable, filterable) rather than a text string; `ensureHistoryDateFormat`
+ * pins the display pattern so it can't drift with locale.
+ *
+ * Round-trips safely: the API hands back the formatted "07/2008" and
+ * normalizeMonth turns it straight back into "2008-07" for the editor.
+ */
+function toSheetMonth(value: string): string {
+  const m = (value || '').match(/^(\d{4})-(\d{2})$/);
+  return m ? `${m[2]}/${m[1]}` : (value || '');
+}
+
+// Sheet IDs are stable for the life of the tab; cache per server instance.
+let _historySheetId: number | null | undefined;
+
+async function getHistorySheetId(): Promise<number | null> {
+  if (_historySheetId !== undefined) return _historySheetId;
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: getSpreadsheetId() });
+  _historySheetId =
+    meta.data.sheets?.find((s) => s.properties?.title === CAREER_HISTORY_SHEET)?.properties?.sheetId ?? null;
+  return _historySheetId;
+}
+
+/**
+ * Pin the Start/End columns to an MM/YYYY display format, over the whole column
+ * (no endRowIndex = "to the bottom of the sheet") so later rows are covered too.
+ *
+ * This is the *only* presentation the code touches. Everything else about how
+ * the tab looks — dropdown chip colours, fills, fonts, conditional formatting —
+ * is owned by hand in Google Sheets and deliberately left alone. In particular
+ * the code no longer sets data validation: the Sheets API exposes no colour
+ * field on a validation rule (only condition / inputMessage / showCustomUi /
+ * strict), so re-applying a dropdown from here would silently wipe any chip
+ * colours set in the UI. Valid values are instead guaranteed server-side, in
+ * saveCareerHistory.
+ */
+async function ensureHistoryDateFormat(cols: Record<string, number>, headerRow: number): Promise<void> {
+  const sheetId = await getHistorySheetId();
+  if (sheetId == null) return;
+
+  const requests = ['start', 'end']
+    .map((f) => cols[f])
+    .filter((i) => i >= 0)
+    .map((i) => ({
+      repeatCell: {
+        range: { sheetId, startRowIndex: headerRow + 1, startColumnIndex: i, endColumnIndex: i + 1 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'MM/yyyy' } } },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    }));
+
+  if (requests.length === 0) return;
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: { requests },
+  });
 }
 
 export interface CareerHistoryResult {
@@ -1116,14 +1181,17 @@ export async function saveCareerHistory(
   const shape = readHistorySheet(rows);
   if (!shape) return { ok: false, available: false, saved: 0 };
 
+  // Phase and Sector are clamped to the fixed taxonomies here rather than being
+  // enforced by dropdown validation on the sheet — that keeps the guarantee
+  // while leaving the sheet's own dropdowns and their colours untouched.
   const clean = sortHistory(
     entries
       .filter((e) => (e.title || '').trim() || (e.org || '').trim())
       .map((e) => ({
-        phase: (e.phase || 'Post-Fellowship') as CareerPhase,
+        phase: (CAREER_PHASES.includes(e.phase as CareerPhase) ? e.phase : 'Post-Fellowship') as CareerPhase,
         title: (e.title || '').trim(),
         org: (e.org || '').trim(),
-        sector: (e.sector || '').trim(),
+        sector: CAREER_SECTORS.includes(normalizeSector(e.sector || '')) ? normalizeSector(e.sector || '') : '',
         start: normalizeMonth(e.start || ''),
         // "Current" means ongoing, so it never carries an end date.
         end: e.phase === 'Current' ? '' : normalizeMonth(e.end || ''),
@@ -1146,8 +1214,8 @@ export async function saveCareerHistory(
     put('org', e.org);
     put('title', e.title);
     put('sector', e.sector);
-    put('start', e.start);
-    put('end', e.end);
+    put('start', toSheetMonth(e.start));
+    put('end', toSheetMonth(e.end));
     put('notes', e.notes);
     return row;
   };
@@ -1181,15 +1249,18 @@ export async function saveCareerHistory(
       spreadsheetId,
       range: CAREER_HISTORY_SHEET,
       valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
+      // Deliberately NOT insertDataOption: 'INSERT_ROWS'. Inserted rows don't
+      // inherit data validation or formatting, which is what made written
+      // phases land as plain text instead of dropdown selections. Overwriting
+      // the existing empty rows instead means new data lands in cells that
+      // already carry the sheet's dropdowns, colours, and formatting.
       requestBody: { values: toAppend },
     });
   }
 
   const surplus = existingRowNums.slice(clean.length);
   if (surplus.length > 0) {
-    const meta = await sheets.spreadsheets.get({ spreadsheetId });
-    const sheetId = meta.data.sheets?.find((s) => s.properties?.title === CAREER_HISTORY_SHEET)?.properties?.sheetId;
+    const sheetId = await getHistorySheetId();
     if (sheetId != null) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
@@ -1205,6 +1276,15 @@ export async function saveCareerHistory(
         },
       });
     }
+  }
+
+  // Applied after the writes so it also catches newly appended rows. Failing
+  // here must not fail the save — the data is already correct, only the date
+  // display would be off.
+  try {
+    await ensureHistoryDateFormat(shape.cols, shape.headerRow);
+  } catch (err) {
+    console.error('Could not set the MM/YYYY date format on the career history tab:', err);
   }
 
   return { ok: true, available: true, saved: clean.length };

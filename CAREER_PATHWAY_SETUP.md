@@ -45,6 +45,44 @@ a "do not edit" banner row above them is fine and gets skipped automatically):
 Accepted alternates if yours differ slightly: `Start`/`End` for the date columns,
 `Org`/`Employer` for Organization, `Role`/`Position` for Title.
 
+### Who owns the formatting
+
+You do. The code writes **data** and one thing only about presentation: it pins
+the Start/End columns to an `MM/YYYY` display format. Dropdowns, chip colours,
+fills, fonts, conditional formatting — all yours, and the code won't overwrite
+them.
+
+That's a deliberate choice with one thing to know. Google's Sheets API has no
+colour field on a data validation rule, so if the code set the Phase/Sector
+dropdowns it would silently wipe any colours you'd assigned to them. So it
+doesn't set them at all. Instead:
+
+- **Set the Phase and Sector dropdowns yourself**, with whatever colours you
+  like, and apply them to a **generous row range** — say `D3:D1000` and
+  `G3:G1000` rather than just the rows that have data today. New rows are
+  written into existing empty rows, so they inherit whatever those rows already
+  carry. If the data ever grows past your range, extend it.
+- **Valid values are still guaranteed.** The API clamps both columns to their
+  fixed lists before writing, so nothing off-taxonomy can reach the sheet even
+  without dropdown validation enforcing it. Build your dropdowns from these:
+
+  | Column | Allowed values |
+  |---|---|
+  | Phase | `Pre-Fellowship` · `Fellowship` · `Post-Fellowship` · `Current` |
+  | Sector | `Government` · `Policy/Think Tank/Nonprofit` · `Private` · `Academia` · `Other` |
+
+  `Other` is a genuine catch-all for roles that don't fit the four. One
+  deliberate quirk: it never earns the +2 sector bonus in matching, because
+  "doesn't fit a category" isn't evidence of a fit with any particular target
+  pathway. An `Other` alum can still be recommended on shared policy areas or an
+  exact realized-pathway match.
+
+  Note the sector rename: **`Policy/Think Tank` is now
+  `Policy/Think Tank/Nonprofit`.** The old labels still work — it's mapped to
+  the new one whenever it's read, and rewritten to the new one whenever a row is
+  saved — so the dashboard is correct whether or not the spreadsheet has caught
+  up. See "Renaming the sector" at the end of this doc.
+
 Notes on the columns:
 
 - **ID** — must match the alum's `ID` on the Alumni tab. This is the join key;
@@ -53,8 +91,9 @@ Notes on the columns:
   Order as 1, 2, 3… on every save, purely as a same-month tie-breaker. There is
   no Order field in the editing UI and you never need to type one.
 - **Phase** — dropdown: `Pre-Fellowship` / `Fellowship` / `Post-Fellowship` /
-  `Current`. "Current" is explicit, not inferred from a blank end date. Only one
-  row per person should carry it; the editor warns you if a second one appears.
+  `Current`. "Current" is explicit, not inferred from a blank end date. A person
+  can carry it on **more than one row** — concurrent positions are normal and
+  the editor doesn't treat them as a mistake.
 - **Start Date / End Date** — `2024-09` is the canonical format. `2024-09-01`,
   `9/2024`, and `Sep 2024` are all read correctly too. A Current-phase row's end
   date is cleared automatically.
@@ -150,6 +189,34 @@ the existing `Currently on the Hill?` flag, so a fellow targeting "Stay in
 Congress" and one targeting "Executive Branch" get different recommendations.
 **This split never surfaces in the UI** — badges, filters, and the By Sector pie
 chart all keep the single "Government" bucket.
+
+## Renaming the sector: `Policy/Think Tank` → `Policy/Think Tank/Nonprofit`
+
+The dashboard already uses the new label everywhere — badges, filters, the By
+Sector pie chart, the alumni edit form, the career-history editor, and the
+matching logic.
+
+**Nothing is broken while the spreadsheet still says the old thing.** Any row
+holding a previous label — `Policy/Think Tank`, or the short-lived
+`Policy/Nonprofit/Think Tank` — is mapped to the current one the moment it's read, so
+it filters, charts, and matches identically to a row that's been updated. Rows
+also migrate themselves: saving an alum or their career history writes the new
+label back.
+
+To finish the migration whenever it's convenient:
+
+1. On the **Alumni** tab, add `Policy/Think Tank/Nonprofit` to the `Sector`
+   dropdown's allowed values. Do this *first* — otherwise rows the dashboard
+   saves will get flagged as invalid entries.
+2. Find and replace any earlier label → `Policy/Think Tank/Nonprofit` on the
+   `Sector` column of the **Alumni** tab and the **Alumni Career History** tab.
+   Replace the longer `Policy/Nonprofit/Think Tank` *first* if it appears at
+   all, since `Policy/Think Tank` is a prefix of the new label and a careless
+   replace-all would produce `Policy/Think Tank/Nonprofit/Nonprofit`.
+3. Remove the old value from the dropdown once nothing uses it.
+
+There's no deadline on any of that, and the back-compat mapping can stay
+indefinitely — it costs nothing.
 
 ## What's deliberately not built yet
 
