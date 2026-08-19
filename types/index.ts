@@ -23,6 +23,12 @@ export interface Fellow {
   report_end_month: string;
   onboarding_completed?: string;   // comma-separated completed task indices e.g. "0,1,2,3"
   offboarding_completed?: string;  // comma-separated completed task indices e.g. "0,1,2,3,4"
+  // ── Career Pathway Engine ──────────────────────────────────────────────────
+  // Parsed from the "Policy Issue Areas" multi-select column (up to 3 tags,
+  // Career Pathway taxonomy — NOT the Accomplishments Matrix taxonomy).
+  policy_areas: string[];
+  // Parsed from the "Target Pathways" multi-select column (up to 2 tags).
+  target_pathways: string[];
 }
 
 export interface Checkin {
@@ -67,6 +73,40 @@ export interface Alumni {
   education: string;
   served_on_hill: boolean;
   currently_on_hill: boolean;
+  // ── Career Pathway Engine ──────────────────────────────────────────────────
+  // Same 37-tag taxonomy as Fellows (up to 3 tags).
+  policy_areas: string[];
+  // Single-select — the pathway this alum actually landed in.
+  realized_pathway: string;
+}
+
+/**
+ * One role in a person's career trajectory. Long/tidy format: one row per
+ * role on the "Alumni Career History" sheet tab, many rows per person.
+ */
+export interface CareerHistoryEntry {
+  person_id: string;      // joins to Alumni.id / Fellow.id (column A: "ID")
+  person_name: string;    // readability only when scanning the sheet
+  order: number;          // internal same-month tie-breaker; never user-entered
+  phase: CareerPhase;
+  org: string;
+  title: string;
+  sector: string;
+  start: string;          // "YYYY-MM"
+  end: string;            // "YYYY-MM", or '' when ongoing (Phase = Current)
+  notes: string;
+}
+
+export type CareerPhase = 'Pre-Fellowship' | 'Fellowship' | 'Post-Fellowship' | 'Current';
+
+/** A ranked alumni recommendation for a given fellow. */
+export interface AlumniMatch {
+  alumni: Alumni;
+  score: number;
+  overlap: string[];        // shared policy issue areas
+  pathwayMatch: boolean;    // alum's realized pathway is one of the fellow's targets
+  sectorMatch: boolean;     // alum's (matching-only) sector is a target-pathway sector
+  reason: string;           // human-readable one-liner
 }
 
 export interface TCEvent {
