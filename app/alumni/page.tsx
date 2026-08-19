@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Alumni, Accomplishment } from '@/types';
 import { parseCohortDate } from '@/lib/helpers';
+import { SECTOR_POLICY } from '@/lib/career-pathway';
 import { CareerHistorySection } from '@/components/career-history';
 import { AlumniPathwayTab } from '@/components/pathway-ui';
 
@@ -14,9 +15,10 @@ const PARTY_BG: Record<string, string> = {
 };
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Government:           { bg: 'bg-blue-100',    text: 'text-blue-800' },
-  'Policy/Think Tank':  { bg: 'bg-cyan-100',    text: 'text-cyan-800' },
+  [SECTOR_POLICY]:      { bg: 'bg-cyan-100',    text: 'text-cyan-800' },
   Academia:             { bg: 'bg-purple-100',  text: 'text-purple-800' },
   Private:              { bg: 'bg-orange-100',  text: 'text-orange-800' },
+  Other:                { bg: 'bg-slate-100',   text: 'text-slate-700' },
 };
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
@@ -34,8 +36,8 @@ const TYPE_HEX: Record<string, string> = {
   CIS: '#f59e0b', CDSF: '#10b981', Unknown: '#d1d5db',
 };
 const SECTOR_HEX: Record<string, string> = {
-  Government: '#3b82f6', Private: '#8b5cf6', 'Policy/Think Tank': '#22c55e',
-  Academia: '#f59e0b', Unknown: '#d1d5db',
+  Government: '#3b82f6', Private: '#8b5cf6', [SECTOR_POLICY]: '#22c55e',
+  Academia: '#f59e0b', Other: '#94a3b8', Unknown: '#d1d5db',
 };
 
 function ftLabel(ft: string): string {
@@ -413,7 +415,7 @@ function AlumniForm({ alumni, onClose, onSaved }: { alumni?: Alumni; onClose: ()
             <div><label className="text-xs font-medium text-gray-600">Chamber</label>
               <Select value={form.chamber || ''} onChange={v => set('chamber', v)} options={['', 'Senate', 'House', 'Executive Branch']} /></div>
             <div><label className="text-xs font-medium text-gray-600">Sector</label>
-              <Select value={form.sector || ''} onChange={v => set('sector', v)} options={['', 'Government', 'Policy/Think Tank', 'Academia', 'Private']} /></div>
+              <Select value={form.sector || ''} onChange={v => set('sector', v)} options={['', 'Government', SECTOR_POLICY, 'Academia', 'Private', 'Other']} /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-medium text-gray-600">Office Served</label><input value={form.office_served || ''} onChange={e => set('office_served', e.target.value)} placeholder="e.g., Sen. Maria Cantwell (D-WA)" className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
@@ -458,8 +460,9 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
     total: alumni.length,
     govt: alumni.filter(a => a.sector === 'Government').length,
     private: alumni.filter(a => a.sector === 'Private').length,
-    nonprofit: alumni.filter(a => a.sector === 'Policy/Think Tank').length,
+    nonprofit: alumni.filter(a => a.sector === SECTOR_POLICY).length,
     academia: alumni.filter(a => a.sector === 'Academia').length,
+    other: alumni.filter(a => a.sector === 'Other').length,
   }), [alumni]);
 
   const charts = useMemo(() => {
@@ -498,8 +501,8 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
 
   return (
     <div>
-      <div className="grid grid-cols-5 gap-4 mb-6">
-        {[['Total Alumni', stats.total], ['Government', stats.govt], ['Private Sector', stats.private], ['Policy/Think Tank', stats.nonprofit], ['Academia', stats.academia]].map(([l, v]) => (
+      <div className="grid grid-cols-6 gap-4 mb-6">
+        {[['Total Alumni', stats.total], ['Government', stats.govt], ['Private Sector', stats.private], [SECTOR_POLICY, stats.nonprofit], ['Academia', stats.academia], ['Other', stats.other]].map(([l, v]) => (
           <div key={l} className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-sm text-gray-500 mb-1">{l}</p>
             <p className="text-3xl font-semibold text-gray-900">{v}</p>
@@ -515,7 +518,7 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
         <div className="grid grid-cols-5 gap-3">
           <input type="text" placeholder="Search name, org, or office…" value={search} onChange={e => setSearch(e.target.value)} className="col-span-2 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
           <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', ...FELLOW_TYPE_OPTIONS]} />
-          <Select value={sectorFilter} onChange={setSectorFilter} options={['All Sectors', 'Government', 'Policy/Think Tank', 'Academia', 'Private']} />
+          <Select value={sectorFilter} onChange={setSectorFilter} options={['All Sectors', 'Government', SECTOR_POLICY, 'Academia', 'Private', 'Other']} />
           <Select value={partyFilter} onChange={setPartyFilter} options={['All Parties', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} />
         </div>
         <div className="grid grid-cols-5 gap-3">

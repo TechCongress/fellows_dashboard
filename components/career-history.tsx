@@ -219,8 +219,6 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
     setSaving(false);
   }
 
-  const currentCount = draft.filter((r) => r.phase === 'Current').length;
-
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
@@ -268,11 +266,9 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
             Saving writes these rows to the <strong>Alumni Career History</strong> tab. There is no Order field to fill in —
             the timeline re-sorts itself by each role&rsquo;s Start date on save.
           </p>
-          {currentCount > 1 && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              {currentCount} roles are marked &ldquo;Current&rdquo;. Only one role per person should be.
-            </p>
-          )}
+          {/* No "only one Current role" warning: fellows and alumni genuinely
+              hold concurrent positions, so several Current rows is valid data,
+              not a mistake to flag. */}
           {draft.map((entry, i) => (
             <EditorRow key={i} entry={entry} index={i} onChange={patchRow}
               onRemove={(idx) => setDraft((rows) => rows.filter((_, x) => x !== idx))} />

@@ -19,6 +19,40 @@ import { Alumni, Fellow, CareerPhase, AlumniMatch } from '@/types';
 export const MAX_POLICY_AREAS = 3;      // fellows and alumni both capped at 3
 export const MAX_TARGET_PATHWAYS = 2;
 
+// ── Sectors ──────────────────────────────────────────────────────────────────
+// Declared up here because PATHWAY_TO_SECTORS below is initialised at module
+// load and references SECTOR_POLICY — a `const` declared further down would
+// still be in its temporal dead zone at that point and throw.
+
+/**
+ * The user-visible Sector taxonomy, shared by the spreadsheet and the app.
+ * Import SECTOR_POLICY rather than writing the string literal anywhere — the
+ * label has been reworded twice, and every hardcoded copy is a place the next
+ * rewording can silently miss.
+ */
+export const SECTOR_POLICY = 'Policy/Think Tank/Nonprofit';
+// "Other" is a real, selectable sector — a catch-all for roles that genuinely
+// don't fit the four. It deliberately has no entry in PATHWAY_TO_SECTORS below,
+// so it never contributes a sector bonus to matching: "unclassifiable" isn't
+// evidence of a fit with any particular target pathway.
+export const CAREER_SECTORS = ['Government', SECTOR_POLICY, 'Private', 'Academia', 'Other'];
+
+/**
+ * Sector labels that have been renamed. Values already sitting in the
+ * spreadsheet are mapped to the current label on read, so a rename doesn't
+ * require migrating the sheet before the dashboard is correct — and
+ * half-migrated data behaves the same as fully-migrated data.
+ */
+const LEGACY_SECTORS: Record<string, string> = {
+  'Policy/Think Tank': SECTOR_POLICY,            // the original label
+  'Policy/Nonprofit/Think Tank': SECTOR_POLICY,  // briefly used on 2026-08-18
+};
+
+export function normalizeSector(value: string): string {
+  const v = (value || '').trim();
+  return LEGACY_SECTORS[v] || v;
+}
+
 // ── Policy issue areas (37 tags / 8 categories) ──────────────────────────────
 
 export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
@@ -97,8 +131,8 @@ const PATHWAY_TO_SECTORS: Record<string, string[]> = {
   'Stay in Congress': ['Government: Congress'],
   'Executive Branch': ['Government: Executive Branch'],
   'Elected Office': ['Government: Congress'],
-  'Think Tank': ['Policy/Think Tank'],
-  'Civil Society / Nonprofit': ['Policy/Think Tank'],
+  'Think Tank': [SECTOR_POLICY],
+  'Civil Society / Nonprofit': [SECTOR_POLICY],
   'Private Sector': ['Private'],
   'Academia': ['Academia'],
   'Law School': [],
@@ -112,12 +146,17 @@ function targetSectorsOf(targetPathways: string[]): string[] {
   return [...set];
 }
 
-/** Matching-only sector refinement. Does not change `alumni.sector` anywhere. */
+/**
+ * Matching-only sector refinement. Does not change `alumni.sector` anywhere.
+ * Normalises first so a renamed label reaching this function from anywhere —
+ * not just via fetchAlumni — still scores correctly.
+ */
 function effectiveSector(a: Alumni): string {
-  if (a.sector === 'Government') {
+  const sector = normalizeSector(a.sector);
+  if (sector === 'Government') {
     return a.currently_on_hill ? 'Government: Congress' : 'Government: Executive Branch';
   }
-  return a.sector;
+  return sector;
 }
 
 export const SCORE_WEIGHTS = { policyArea: 2, exactPathway: 3, sector: 2 };
@@ -215,8 +254,7 @@ export function mailtoHref(email: string, d: { subject: string; body: string }):
 
 export const CAREER_PHASES: CareerPhase[] = ['Pre-Fellowship', 'Fellowship', 'Post-Fellowship', 'Current'];
 
-/** Matches the dashboard's existing, user-visible Sector taxonomy exactly. */
-export const CAREER_SECTORS = ['Government', 'Policy/Think Tank', 'Private', 'Academia'];
+// (Sector constants are declared near the top of this file — see the note there.)
 
 export const PHASE_STYLES: Record<CareerPhase, { dot: string; chipBg: string; chipText: string; cardBg: string; cardBorder: string }> = {
   'Pre-Fellowship':  { dot: 'bg-gray-400',    chipBg: 'bg-gray-200',   chipText: 'text-gray-600',   cardBg: 'bg-gray-50',  cardBorder: 'border-gray-200' },
@@ -257,7 +295,12 @@ export function sortHistory<T extends { start: string; order?: number }>(entries
   });
 }
 
-/** The row tagged Phase = "Current" is the person's current role. */
-export function currentRoleOf<T extends { phase: string }>(entries: T[]): T | undefined {
-  return entries.find((e) => e.phase === 'Current');
+/**
+ * The rows tagged Phase = "Current" are the person's present roles — plural on
+ * purpose. People hold concurrent positions (a Hill role plus an adjunct
+ * appointment, say), so more than one Current row is valid data rather than
+ * something to correct. Anything consuming this should handle a list.
+ */
+export function currentRolesOf<T extends { phase: string }>(entries: T[]): T[] {
+  return entries.filter((e) => e.phase === 'Current');
 }
