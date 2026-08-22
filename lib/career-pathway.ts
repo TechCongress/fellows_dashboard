@@ -304,3 +304,76 @@ export function sortHistory<T extends { start: string; order?: number }>(entries
 export function currentRolesOf<T extends { phase: string }>(entries: T[]): T[] {
   return entries.filter((e) => e.phase === 'Current');
 }
+
+/** A run of consecutive roles at one organization — a single tenure. */
+export interface OrgTenure<T> {
+  org: string;
+  sector: string;    // a property of the organization, so taken once from the run
+  roles: T[];        // ascending by start date, same direction as the timeline
+  start: string;
+  end: string;       // '' when any role in the run is ongoing
+}
+
+/**
+ * Collapse a career history into tenures, so a promotion chain at one employer
+ * reads as one block rather than several unrelated jobs.
+ *
+ * The rule is **consecutive**, not "same name". Only entries adjacent in date
+ * order merge, so someone who leaves an organization and returns later gets two
+ * separate tenures — collapsing those would claim an unbroken stint that never
+ * happened. This is the one piece of this function worth being careful about.
+ *
+ * Grouping is per-organization, so concurrent roles at different employers stay
+ * in separate blocks.
+ */
+export function groupByOrganization<T extends { org: string; sector: string; start: string; end: string; order?: number }>(
+  entries: T[]
+): OrgTenure<T>[] {
+  const out: OrgTenure<T>[] = [];
+  for (const entry of sortHistory(entries)) {
+    const last = out[out.length - 1];
+    const sameOrg = last && last.org.trim().toLowerCase() === (entry.org || '').trim().toLowerCase();
+    if (sameOrg) {
+      last.roles.push(entry);
+      // An ongoing role anywhere in the run leaves the whole tenure open-ended.
+      last.end = last.roles.some((r) => !r.end) ? '' : entry.end;
+      if (!last.sector && entry.sector) last.sector = entry.sector;
+    } else {
+      out.push({
+        org: entry.org,
+        sector: entry.sector,
+        roles: [entry],
+        start: entry.start,
+        end: entry.end,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Human-readable length of a role or tenure, e.g. "2 yrs 5 mos". A blank end
+ * date means "through today". Inclusive of both endpoints, so a single month
+ * reads as "1 mo" rather than "0 mos".
+ */
+export function durationLabel(start: string, end: string): string {
+  if (!start) return '';
+  const [sy, sm] = start.split('-').map(Number);
+  if (!sy || !sm) return '';
+  let ey: number, em: number;
+  if (end) {
+    [ey, em] = end.split('-').map(Number);
+    if (!ey || !em) return '';
+  } else {
+    const now = new Date();
+    ey = now.getFullYear();
+    em = now.getMonth() + 1;
+  }
+  const months = Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} yr${years > 1 ? 's' : ''}`);
+  if (rem) parts.push(`${rem} mo${rem > 1 ? 's' : ''}`);
+  return parts.join(' ');
+}
