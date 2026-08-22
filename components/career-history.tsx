@@ -13,7 +13,10 @@ import { CareerHistoryEntry, CareerPhase } from '@/types';
 import {
   CAREER_PHASES,
   CAREER_SECTORS,
+  OrgTenure,
   dateRangeLabel,
+  durationLabel,
+  groupByOrganization,
   phaseStyle,
   sortHistory,
 } from '@/lib/career-pathway';
@@ -45,32 +48,100 @@ function PhaseLegend() {
   );
 }
 
+function PhaseChip({ phase }: { phase: string }) {
+  const s = phaseStyle(phase);
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${s.chipBg} ${s.chipText}`}>
+      {phase}
+    </span>
+  );
+}
+
+/** A tenure with a single role — rendered exactly as the timeline always has. */
+function SingleRoleItem({ entry }: { entry: CareerHistoryEntry }) {
+  const s = phaseStyle(entry.phase);
+  return (
+    <div className={`flex-1 min-w-0 rounded-lg border px-4 py-2.5 ${s.cardBg} ${s.cardBorder}`}>
+      <p className="text-sm font-semibold text-gray-900">{entry.title || '—'}</p>
+      {entry.org && <p className="text-sm text-gray-600 mt-0.5">{entry.org}</p>}
+      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+        <PhaseChip phase={entry.phase} />
+        <span className="text-xs text-gray-500 tabular-nums">{dateRangeLabel(entry.start, entry.end)}</span>
+        {entry.sector && <span className="text-xs text-gray-500">· {entry.sector}</span>}
+      </div>
+      {entry.notes && <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{entry.notes}</p>}
+    </div>
+  );
+}
+
+/**
+ * Several consecutive roles at one employer, drawn as one tenure. The heading
+ * carries the organization, the full span and the sector (a property of the
+ * organization, not the role); each role keeps its own dates and phase beneath.
+ */
+function TenureItem({ tenure }: { tenure: OrgTenure<CareerHistoryEntry> }) {
+  // The spine already shows the latest phase, so the block styling follows it.
+  const latest = tenure.roles[tenure.roles.length - 1];
+  const s = phaseStyle(latest.phase);
+  const span = durationLabel(tenure.start, tenure.end);
+  return (
+    <div className={`flex-1 min-w-0 rounded-lg border px-4 py-2.5 ${s.cardBg} ${s.cardBorder}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-semibold text-gray-900">{tenure.org || '—'}</p>
+        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+          {dateRangeLabel(tenure.start, tenure.end)}
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 mt-0.5">
+        {[tenure.sector, span, `${tenure.roles.length} roles`].filter(Boolean).join(' · ')}
+      </p>
+      <ol className="mt-2 pt-0.5 border-t border-dashed border-gray-300">
+        {tenure.roles.map((role, i) => (
+          <li
+            key={`${role.start}-${role.title}-${i}`}
+            className={`flex gap-2.5 py-2 ${i > 0 ? 'border-t border-gray-200' : ''}`}
+          >
+            <span className={`mt-1.5 w-2 h-2 flex-shrink-0 rounded-full ${phaseStyle(role.phase).dot}`} aria-hidden />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-gray-800">{role.title || '—'}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <PhaseChip phase={role.phase} />
+                <span className="text-xs text-gray-500 tabular-nums">{dateRangeLabel(role.start, role.end)}</span>
+                {durationLabel(role.start, role.end) && (
+                  <span className="text-[11px] text-gray-400">{durationLabel(role.start, role.end)}</span>
+                )}
+              </div>
+              {role.notes && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{role.notes}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export function CareerTimeline({ entries }: { entries: CareerHistoryEntry[] }) {
-  const sorted = sortHistory(entries);
+  // Consecutive roles at one employer collapse into a single tenure. Someone
+  // who leaves and returns keeps two separate blocks — see groupByOrganization.
+  const tenures = groupByOrganization(sortHistory(entries));
   return (
     <div className="relative pl-1">
       <div className="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-gray-200" aria-hidden />
       <ol className="space-y-3">
-        {sorted.map((e, i) => {
-          const s = phaseStyle(e.phase);
+        {tenures.map((tenure, i) => {
+          // The spine takes the most recent role's phase: it answers "where are
+          // they now", while the block below answers "how did they get there".
+          const latest = tenure.roles[tenure.roles.length - 1];
+          const s = phaseStyle(latest.phase);
           return (
-            <li key={`${e.start}-${e.title}-${i}`} className="relative flex gap-4">
+            <li key={`${tenure.org}-${tenure.start}-${i}`} className="relative flex gap-4">
               <span
-                className={`relative z-[1] mt-2 w-[15px] h-[15px] -ml-[0px] flex-shrink-0 rounded-full border-[3px] border-white ring-2 ring-gray-200 ${s.dot}`}
+                className={`relative z-[1] mt-2 w-[15px] h-[15px] flex-shrink-0 rounded-full border-[3px] border-white ring-2 ring-gray-200 ${s.dot}`}
                 aria-hidden
               />
-              <div className={`flex-1 min-w-0 rounded-lg border px-4 py-2.5 ${s.cardBg} ${s.cardBorder}`}>
-                <p className="text-sm font-semibold text-gray-900">{e.title || '—'}</p>
-                {e.org && <p className="text-sm text-gray-600 mt-0.5">{e.org}</p>}
-                <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${s.chipBg} ${s.chipText}`}>
-                    {e.phase}
-                  </span>
-                  <span className="text-xs text-gray-500 tabular-nums">{dateRangeLabel(e.start, e.end)}</span>
-                  {e.sector && <span className="text-xs text-gray-500">· {e.sector}</span>}
-                </div>
-                {e.notes && <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{e.notes}</p>}
-              </div>
+              {tenure.roles.length === 1
+                ? <SingleRoleItem entry={tenure.roles[0]} />
+                : <TenureItem tenure={tenure} />}
             </li>
           );
         })}
