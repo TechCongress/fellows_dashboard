@@ -14,7 +14,7 @@ request time, so **no redeploy is needed** after you edit the sheet.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 37 tags in §4 |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 32 tags in §4 |
 | `Target Pathways` | Multi-select dropdown (chips) | 2 | The 8 tags in §5 |
 
 Turns on: the tag editors on each fellow's **Career Pathway** tab, and their
@@ -24,7 +24,7 @@ half of the alumni matching.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 37 tags — must be the identical list as the Fellows tab |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 32 tags — must be the identical list as the Fellows tab |
 | `Realized Pathway` | Single-select dropdown | 1 | The 8 tags in §5 |
 
 Turns on: the tag editors on each alum's **Career Pathway** tab, and the other
@@ -105,7 +105,7 @@ before the Fellowship row.
 
 ---
 
-## 4. Policy Issue Areas — the 37-tag source list
+## 4. Policy Issue Areas — the 32-tag source list
 
 Paste this column into a hidden source range and point both multi-select
 dropdowns at it. **This list is completely separate from the Accomplishments
@@ -118,10 +118,10 @@ Cybersecurity
 Data Privacy
 Telecommunications & Broadband
 Semiconductor & Supply Chain
-Emerging Technologies
+Quantum Computing
 Digital Infrastructure
 Open Source & Software Policy
-Digital Health & Health IT
+Digital Health & Wearables
 Biotech & Life Sciences
 Public Health
 Science Policy & R&D Funding
@@ -133,27 +133,22 @@ Election Security
 Critical Infrastructure Protection
 Future of Work & Automation
 Financial Technology
-Antitrust & Competition Policy
+Antitrust & Big Tech Accountability
 Workforce Development
-Climate Technology
 Clean Energy
 Energy Grid & Infrastructure
-Government Technology
-Election Administration
+Government Innovation
 Disinformation & Media Policy
-Open Government & Transparency
 Education Technology
-Housing & Urban Tech
 Criminal Justice & Technology
 Accessibility & Disability Policy
-Immigration & Technology
-Tech Diplomacy
-Trade & Technology Policy
+Children's Safety & Social Media
+Trade & Export Controls
 International Cyber Policy
 ```
 
 The API rejects anything not on this list, so a typo in the sheet reads as
-"untagged" rather than silently creating a 38th category.
+"untagged" rather than silently adding a new one.
 
 ## 5. Pathway tags — the 8-tag source list
 

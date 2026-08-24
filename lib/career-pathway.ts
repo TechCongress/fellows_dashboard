@@ -7,7 +7,7 @@
  * IMPORTANT — two separate taxonomies, do not conflate:
  *   • The Accomplishments Matrix has its own 11-tag policy taxonomy. It is a
  *     different system with a different owner. Nothing here reads from it.
- *   • POLICY_AREAS below (37 tags, 8 categories) is the Career Pathway
+ *   • POLICY_AREAS below (32 tags, 8 categories) is the Career Pathway
  *     taxonomy, used for Fellows and Alumni tagging only. It is backed by its
  *     own Google Sheets column and its own dropdown source range.
  */
@@ -53,17 +53,21 @@ export function normalizeSector(value: string): string {
   return LEGACY_SECTORS[v] || v;
 }
 
-// ── Policy issue areas (37 tags / 8 categories) ──────────────────────────────
+// ── Policy issue areas (32 tags / 8 categories) ────────────────────────────────────
 
 export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
-  { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Emerging Technologies', 'Digital Infrastructure', 'Open Source & Software Policy'] },
-  { group: 'Health & Science', tags: ['Digital Health & Health IT', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy', 'Nuclear Policy'] },
+  { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Quantum Computing', 'Digital Infrastructure', 'Open Source & Software Policy'] },
+  { group: 'Health & Science', tags: ['Digital Health & Wearables', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy', 'Nuclear Policy'] },
   { group: 'National Security & Defense', tags: ['Defense Technology', 'Intelligence & Surveillance', 'Election Security', 'Critical Infrastructure Protection'] },
-  { group: 'Economy & Labor', tags: ['Future of Work & Automation', 'Financial Technology', 'Antitrust & Competition Policy', 'Workforce Development'] },
-  { group: 'Environment & Energy', tags: ['Climate Technology', 'Clean Energy', 'Energy Grid & Infrastructure'] },
-  { group: 'Governance & Democracy', tags: ['Government Technology', 'Election Administration', 'Disinformation & Media Policy', 'Open Government & Transparency'] },
-  { group: 'Social Policy', tags: ['Education Technology', 'Housing & Urban Tech', 'Criminal Justice & Technology', 'Accessibility & Disability Policy', 'Immigration & Technology'] },
-  { group: 'International', tags: ['Tech Diplomacy', 'Trade & Technology Policy', 'International Cyber Policy'] },
+  { group: 'Economy & Labor', tags: ['Future of Work & Automation', 'Financial Technology', 'Antitrust & Big Tech Accountability', 'Workforce Development'] },
+  // Broad catch-alls have been deliberately pruned ("Climate Technology",
+  // "Emerging Technologies"): a tag sitting above its own subsets splits tagging
+  // between the general and the specific, so two fellows doing the same work end
+  // up tagged differently and never match each other.
+  { group: 'Environment & Energy', tags: ['Clean Energy', 'Energy Grid & Infrastructure'] },
+  { group: 'Governance & Democracy', tags: ['Government Innovation', 'Disinformation & Media Policy'] },
+  { group: 'Social Policy', tags: ['Education Technology', 'Criminal Justice & Technology', 'Accessibility & Disability Policy', 'Children\'s Safety & Social Media'] },
+  { group: 'International', tags: ['Trade & Export Controls', 'International Cyber Policy'] },
 ];
 
 export const POLICY_AREAS: string[] = POLICY_AREA_CATEGORIES.flatMap((c) => c.tags);
