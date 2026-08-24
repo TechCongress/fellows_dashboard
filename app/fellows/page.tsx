@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
 import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
-import { FellowPathwayTab } from '@/components/pathway-ui';
+import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 
 type SortOption = 'Cohort (newest first)' | 'Cohort (oldest first)' | 'Priority (Flagged first)' | 'Name (A–Z)' | 'Name (Z–A)' | 'Last Check-in (oldest first)' | 'Last Check-in (newest first)' | 'End Date (soonest first)' | 'End Date (latest first)';
 
@@ -95,6 +95,9 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
   const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
   const tl = fellow.fellow_type ? ftLabel(fellow.fellow_type) : '';
   const tc = tl ? TYPE_COLORS[tl] : null;
+  // Empty until the "Policy Issue Areas" column exists on the Fellows tab, in
+  // which case the row is omitted entirely and the card looks exactly as before.
+  const policyAreas = fellow.policy_areas || [];
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col min-h-[220px] hover:shadow-sm transition-shadow">
@@ -106,7 +109,7 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
         <Badge label={fellow.status} {...sc} />
         {needsCheckin && <Badge label="Needs Check-in" bg="bg-amber-100" text="text-amber-800" />}
       </div>
-      <div className="flex flex-wrap gap-1.5 mb-3">
+      <div className={`flex flex-wrap gap-1.5 ${policyAreas.length ? 'mb-2' : 'mb-3'}`}>
         {tc && <Badge label={tl} {...tc} />}
         {fellow.party && !aisf && (
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${PARTY_BG[fellow.party] || 'bg-gray-400'}`}>
@@ -115,6 +118,14 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
         )}
         {aisf && <Badge label="Executive Branch" bg="bg-slate-100" text="text-slate-600" />}
       </div>
+      {/* Policy issue areas get their own row so they stay visually distinct
+          from status/type/party, and wrap rather than truncate — the tag names
+          are long and an abbreviated one isn't much use at a glance. */}
+      {policyAreas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {policyAreas.map((tag) => <PolicyAreaChip key={tag} tag={tag} />)}
+        </div>
+      )}
       <div className="mt-auto space-y-0.5 text-xs text-gray-500">
         {fellow.office && <p className="truncate">{fellow.office}</p>}
         {fellow.start_date && fellow.end_date && <p className="text-gray-400">{fellow.start_date} – {fellow.end_date}</p>}
