@@ -68,7 +68,7 @@ export function normalizePathway(value: string): string {
   return LEGACY_PATHWAYS[v] || v;
 }
 
-// ── Policy issue areas (32 tags / 8 categories) ────────────────────────────────────
+// ── Policy issue areas (33 tags / 8 categories) ────────────────────────────────────
 
 export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
   { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Quantum Computing', 'Digital Infrastructure', 'Open Source & Software Policy'] },
@@ -82,7 +82,7 @@ export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
   { group: 'Environment & Energy', tags: ['Clean Energy', 'Nuclear Energy', 'Energy & Grid Infrastructure'] },
   { group: 'Governance & Democracy', tags: ['Government Innovation', 'Disinformation & Media Policy'] },
   { group: 'Social Policy', tags: ['Education Technology', 'Criminal Justice & Technology', 'Accessibility & Disability Policy', 'Children\'s Safety & Social Media'] },
-  { group: 'International', tags: ['Trade & Export Controls', 'International Cyber Policy'] },
+  { group: 'International', tags: ['US-China Tech Competition', 'Trade & Export Controls', 'International Cyber Policy'] },
 ];
 
 export const POLICY_AREAS: string[] = POLICY_AREA_CATEGORIES.flatMap((c) => c.tags);
@@ -126,6 +126,7 @@ export const PATHWAY_TAGS: PathwayTag[] = [
   { tag: 'Academia', definition: 'Faculty, research, or graduate study track.', bg: 'bg-teal-100', text: 'text-teal-800' },
   { tag: 'Elected Office', definition: 'Running for or serving in elected office.', bg: 'bg-rose-100', text: 'text-rose-800' },
   { tag: 'Civil Society/Nonprofit', definition: 'Advocacy, civic tech, or nonprofit policy role.', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+  { tag: 'State & Local Government', definition: 'Non-elected role in state, city, or county government \u2014 agency, governor\u2019s or mayor\u2019s office, or legislative staff.', bg: 'bg-indigo-100', text: 'text-indigo-800' },
 ];
 
 export const PATHWAY_NAMES: string[] = PATHWAY_TAGS.map((p) => p.tag);
@@ -155,6 +156,14 @@ const PATHWAY_TO_SECTORS: Record<string, string[]> = {
   'Private Sector': ['Private'],
   'Academia': ['Academia'],
   'Law School': [],
+  // Deliberately empty, for the same reason as Law School. The Sector taxonomy
+  // has no state/local bucket: a state or city employee is recorded as
+  // "Government", which the scoring split reads as federal Executive Branch
+  // because they aren't on the Hill. Awarding the sector bonus here would hand
+  // +2 to every federal agency alum for a fellow aiming at city hall. An exact
+  // pathway match still scores +3, which is the signal that actually means
+  // something.
+  'State & Local Government': [],
 };
 
 function targetSectorsOf(targetPathways: string[]): string[] {
