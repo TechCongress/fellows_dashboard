@@ -32,7 +32,7 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - Multi-select fellow type support (fellows can hold multiple designations)
 - **On the Hill** tab — alumni currently working in Congress, with Senate/House breakdown
 - **Served on Hill Post-fellowship** tab — alumni who worked on the Hill at any point after their fellowship
-- Sector tracking: Government, Nonprofit/Think Tank, Academia, Private
+- Sector tracking: Government, Policy/Think Tank/Nonprofit, Private, Academia, Other
 - Engagement tracking via "Last Engaged" date and engagement notes
 - Filter by fellow type, sector, party, chamber, and cohort
 
@@ -47,6 +47,66 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - Read-only view of fellow accomplishments synced from the Accomplishments spreadsheet
 - Filter by cohort, traffic light rating (Green / Yellow / Red), content framework tier (Tier 1–3), and policy tag
 - Each accomplishment links to source material where available
+
+### Career Pathway Engine
+Connects each current fellow to the alumni most worth talking to, based on what
+the fellow wants to do after the fellowship and what alumni have actually gone on
+to do.
+
+Tagging lives on its own **Career Pathways Engine** sheet tab — one row per
+person, fellows and alumni together — rather than as columns on the Fellows and
+Alumni tabs. Every field is looked up by header name at request time, so columns
+can be reordered freely and no redeploy is needed after editing the sheet.
+
+#### Career Pathway tab (fellows)
+- **Policy Issue Areas** — up to 3 from a fixed 33-tag taxonomy
+- **Target Post-Fellowship Pathways** — up to 2 from a fixed 9-tag list
+- **Recommended Alumni Connections** — the top-scoring alumni, each with the
+  overlap that earned the match and a fixed-template intro email draft
+- Policy area badges also appear on the fellow's card on the main Fellows page
+
+#### Career Pathway tab (alumni)
+- **Realized pathway, derived** — read from the alum's career history rather than
+  maintained by hand, so it can't go stale when someone changes jobs. The tab
+  shows what was derived and the evidence for it
+- **Pathway Override** — a single-select for the rare case where the derivation
+  is wrong. Setting it shows what *would* have been derived, so an override is
+  never silently masking a bad rule
+- **Past post-fellowship roles** earn partial credit, so an alum who has since
+  moved on still surfaces for the path they took earlier
+
+#### How matching scores
+| Signal | Points |
+|---|---|
+| Each shared policy issue area | +2 |
+| Alum's current pathway is one of the fellow's targets | +3 |
+| Alum's sector maps to a target-pathway sector | +2 |
+| A past post-fellowship pathway matches a target | +1 |
+
+Alumni marked "do not contact" are excluded outright. For scoring only,
+"Government" is split into Congress vs. Executive Branch using the existing
+`Currently on the Hill?` flag — **this split never surfaces in the UI**; badges,
+filters, and the By Sector chart all keep a single Government bucket.
+
+#### Notes
+A free-text note per person, saved to the `Notes` column of their row on the
+Career Pathways Engine tab. Appears on the Career Pathway tab for both fellows
+and alumni.
+
+### Alumni career history
+A long-format **Alumni Career History** tab — one row per role — replaces the
+single "Current Role" snapshot as the source of truth.
+
+- Full editor on each alum's profile: add, edit, reorder, and delete roles
+- Each role carries a phase: Pre-Fellowship, Fellowship, Post-Fellowship, or
+  Current. A person can hold more than one Current role; concurrent positions
+  are normal and aren't treated as an error
+- **Consecutive roles at the same organization are grouped** into a single block,
+  listed oldest-first inside it, so a promotion reads as one tenure rather than
+  three unrelated jobs
+- Start and end dates display as `MM/YYYY`
+- This history is what the pathway derivation reads
+
 
 ---
 
@@ -75,19 +135,30 @@ fellows_dashboard/
 │   ├── accomplishments/page.tsx    # Accomplishments page
 │   └── api/
 │       ├── auth/route.ts           # Password auth endpoint
-│       ├── fellows/route.ts        # GET / POST fellows
-│       ├── fellows/[id]/route.ts   # DELETE fellow
+│       ├── fellows/route.ts        # GET / POST / DELETE fellows
 │       ├── fellows/onboarding/     # PATCH onboarding checklist state
 │       ├── fellows/offboarding/    # PATCH offboarding checklist state
+│       ├── fellows/[id]/pathway/   # GET ranked alumni matches for one fellow
+│       ├── pathway/route.ts        # GET / PATCH pathway tagging + notes
+│       ├── career-history/route.ts # Alumni career history CRUD
 │       ├── checkins/route.ts       # Check-in CRUD
 │       ├── status-reports/         # Status report CRUD
 │       ├── alumni/route.ts         # Alumni CRUD
 │       ├── events/route.ts         # Events CRUD
-│       └── event-attendance/       # Attendance batch save
+│       ├── attendance/route.ts     # Attendance batch save
+│       └── accomplishments/        # Accomplishments (read-only)
+├── components/
+│   ├── pathway-ui.tsx              # Career Pathway tabs, tag pickers, match cards
+│   └── career-history.tsx          # Career timeline + history editor
 ├── lib/
-│   └── sheets.ts                   # All Google Sheets read/write logic
+│   ├── sheets.ts                   # All Google Sheets read/write logic
+│   ├── career-pathway.ts           # Taxonomies, sectors, and match scoring
+│   ├── pathway-derivation.ts       # Derives an alum's pathway from career history
+│   ├── reference-data.ts           # Shared reference lists
+│   └── helpers.ts                  # Shared utilities
 ├── types/
 │   └── index.ts                    # TypeScript interfaces
+├── CAREER_PATHWAY_SETUP.md         # Sheet setup + the full tag taxonomies
 ├── sync_status_reports.py          # Standalone monthly report sync script
 └── middleware.ts                   # Auth middleware (protects all routes)
 ```
@@ -153,7 +224,11 @@ git push --set-upstream origin feature-name
 
 ## Google Sheets Structure
 
-The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**.
+The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Alumni Career History**.
+
+Missing tabs and missing columns degrade gracefully: the feature goes read-only
+and the dashboard shows an amber note naming the exact column to add, rather than
+erroring.
 
 Column A in every tab is the ID column. Records added through the dashboard receive an auto-generated UUID. If adding rows directly in the sheet, you must supply a unique ID — duplicate or missing IDs will cause errors. Do not hide, delete, or reorder columns in any tab.
 
@@ -162,3 +237,88 @@ The Fellows tab includes two dedicated checklist columns:
 - **Column X** — Offboarding Completed Tasks (comma-separated task indices)
 
 These columns are updated via single-cell writes to avoid overwriting other fellow data.
+
+### Career Pathways Engine tab
+
+One row per person, fellows and alumni together. Expected headers:
+
+`ID · Name · Record Type · Cohort · Policy Issue Areas · Target Pathways · Pathway Override · Last Updated · Notes`
+
+- **Record Type** — `Current Fellow` or `Alumni`
+- **Policy Issue Areas / Target Pathways** — multi-select dropdowns. Google
+  writes multiple picks as `A, B`, which is exactly what the dashboard reads and
+  writes. Google's multi-select enforces no maximum, so if a cell exceeds the cap
+  (3 areas, 2 pathways) the extras are **ignored, not deleted** — the cell keeps
+  them and the person's Career Pathway tab shows an amber note saying which ones
+  count
+- **Last Updated** — stamped automatically as `MM/DD/YYYY` on every write
+- A person's row is **created automatically** the first time they're tagged
+
+### Alumni Career History tab
+
+One row per role. Expected headers:
+
+`ID · Name · Order · Phase · Organization · Title · Sector · Start Date · End Date · Notes`
+
+- **ID** must match the alum's ID on the Alumni tab — this is the join key
+- **Order** is rewritten as 1, 2, 3… on every save as a same-month tie-breaker;
+  there's no Order field in the UI and you never need to type one
+- **Start / End Date** — `2024-09` is canonical; `2024-09-01`, `9/2024`, and
+  `Sep 2024` all read correctly. A Current-phase row's end date is cleared
+
+### Who owns sheet formatting
+
+You do. The code writes **data** and one thing about presentation: it pins the
+career-history date columns to an `MM/YYYY` display format. Dropdowns, colours,
+fills, and conditional formatting are yours and won't be overwritten.
+
+That's deliberate. The Sheets API has no colour field on a data-validation rule,
+so if the code set the dropdowns it would silently wipe any colours assigned to
+them. Set the dropdowns yourself over a generous row range (say `D3:D1000`), and
+note that valid values are guaranteed regardless — the API clamps every write to
+the fixed taxonomies, so nothing off-list can reach the sheet even without
+validation enforcing it.
+
+### Renamed labels
+
+Renames are handled with back-compat aliases: an old value is mapped to the
+current one whenever it's read, and rewritten whenever that row is saved. Nothing
+breaks while the spreadsheet still holds the old label, and rows migrate
+themselves as they're edited.
+
+| Old | Current |
+|---|---|
+| `Policy/Think Tank`, `Policy/Nonprofit/Think Tank` | `Policy/Think Tank/Nonprofit` |
+| `Civil Society / Nonprofit` | `Civil Society/Nonprofit` |
+---
+
+## Google Sheets API quota
+
+Google allows **60 read requests per minute per user**. A single interaction used
+to cost far more than it looks: opening a fellow's Career Pathway tab reads four
+tabs, and the pathway join happens inside `fetchFellows`/`fetchAlumni`, so those
+reads multiplied. A few quick edits in a row were enough to hit the ceiling and
+fail a save with a 429.
+
+Four things keep it under the limit:
+
+1. **Reads collapse within a burst.** Identical reads of the same tab inside a
+   3-second window share one request. The *promise* is cached, not just the
+   result, so concurrent callers join a request already in flight.
+2. **Any write clears that cache**, so a save is always followed by a genuine
+   re-read rather than pre-write rows.
+3. **429s retry** up to three times with exponential backoff and jitter.
+4. **The identity lookup is lazy.** Filling name and cohort on a new Career
+   Pathways Engine row only reads the Fellows and Alumni tabs when a row actually
+   has to be created.
+
+Measured effect: opening the tab went 6 reads → 4, saving tags 6 → 2.
+
+The caching window is deliberately short — it exists to collapse the reads of one
+interaction, not to cache the spreadsheet. Edits made directly in Google Sheets
+still appear on the next page load. Set `SHEETS_READ_WINDOW_MS=0` to disable it
+entirely (the test suite does this).
+
+If the limit is still hit, both pathway routes return a plain-language message
+rather than a generic failure.
+
