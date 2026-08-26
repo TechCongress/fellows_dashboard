@@ -33,14 +33,89 @@ function getSpreadsheetId() {
   return id;
 }
 
-async function getSheetValues(sheetName: string): Promise<string[][]> {
+/**
+ * Google allows 60 read requests per minute per user. That sounds generous
+ * until you count what one interaction costs: opening a fellow's Career Pathway
+ * tab reads four tabs, and saving their tags reads several more, because the
+ * pathway join happens inside fetchFellows/fetchAlumni. A few quick edits in a
+ * row used to be enough to hit the wall and fail the save outright.
+ *
+ * Two things fix that, and neither risks showing stale data for long:
+ *
+ *  1. Identical reads inside the same burst share one request. The promise is
+ *     cached, not just the result, so concurrent callers (a Promise.all over
+ *     fetchFellows + fetchAlumni) join the request already in flight rather
+ *     than opening a second one.
+ *  2. Any write clears the cache, so a save is always followed by a genuine
+ *     re-read. Without that, the refresh after a save would hand back the rows
+ *     as they looked before the write.
+ *
+ * The window is deliberately short. It exists to collapse the reads of a single
+ * interaction, not to cache the spreadsheet — edits made directly in Google
+ * Sheets still show up on the next page load.
+ */
+// Read at call time, not module load: ES imports are hoisted above any
+// assignment in an importing file, so a constant evaluated here could never be
+// overridden by a caller setting the variable.
+function readWindowMs(): number {
+  const raw = process.env.SHEETS_READ_WINDOW_MS;
+  return raw === undefined || raw === '' ? 3000 : Number(raw);
+}
+const readCache = new Map<string, { at: number; rows: Promise<string[][]> }>();
+
+/** Exported so a caller that must see the very latest rows — and tests, which
+ *  rewrite the spreadsheet between assertions — can force the next read to go
+ *  to Google rather than reuse the last one. */
+export function invalidateReadCache() {
+  readCache.clear();
+}
+
+/** Google returns 429 when the per-minute quota is spent. It clears on its own,
+ *  so a short wait and a retry beats surfacing an error the person can only
+ *  respond to by clicking Save again — which is what they were already doing. */
+async function withRetry<T>(call: () => Promise<T>): Promise<T> {
+  let waitMs = 500;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const status = (err as { code?: number; status?: number })?.code
+        ?? (err as { code?: number; status?: number })?.status;
+      if (status !== 429 || attempt >= 3) throw err;
+      // Jitter, so several parallel calls hitting the same limit don't all wake
+      // up and retry in the same instant.
+      await new Promise((r) => setTimeout(r, waitMs + Math.floor(Math.random() * 300)));
+      waitMs *= 2;
+    }
+  }
+}
+
+async function readSheet(sheetName: string): Promise<string[][]> {
   const auth = getAuth();
   const sheets = google.sheets({ version: 'v4', auth });
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: getSpreadsheetId(),
-    range: sheetName,
-  });
+  const res = await withRetry(() =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId: getSpreadsheetId(),
+      range: sheetName,
+    })
+  );
   return (res.data.values || []) as string[][];
+}
+
+async function getSheetValues(sheetName: string): Promise<string[][]> {
+  const hit = readCache.get(sheetName);
+  if (hit && Date.now() - hit.at < readWindowMs()) return hit.rows;
+
+  const rows = readSheet(sheetName);
+  readCache.set(sheetName, { at: Date.now(), rows });
+  // A failed read must not linger in the cache — otherwise one 429 would be
+  // replayed to every caller for the rest of the window, including the callers
+  // that would have succeeded.
+  rows.catch(() => {
+    const current = readCache.get(sheetName);
+    if (current?.rows === rows) readCache.delete(sheetName);
+  });
+  return rows;
 }
 
 function rowsToObjects(rows: string[][]): Record<string, string>[] {
@@ -452,9 +527,35 @@ function alumniRowValues(id: string, d: Partial<Alumni>): string[] {
   ];
 }
 
+/**
+ * Every write in this file goes through here, which makes it the one place to
+ * guarantee two things: writes retry on a rate-limit response, and a successful
+ * write drops the read cache so nothing downstream reads pre-write rows.
+ */
 async function getSheetsClient() {
   const auth = getAuth();
-  return google.sheets({ version: 'v4', auth });
+  const client = google.sheets({ version: 'v4', auth });
+
+  // The googleapis methods are heavily overloaded, so they're narrowed to a
+  // plain call signature to wrap them and cast back afterwards. The cast is
+  // safe: the wrapper forwards every argument and returns what the call
+  // returned — it only adds a retry and a cache drop around it.
+  type WriteCall = (...args: unknown[]) => Promise<unknown>;
+  const guard = (fn: WriteCall): WriteCall => async (...args: unknown[]) => {
+    const result = await withRetry(() => fn(...args));
+    invalidateReadCache();
+    return result;
+  };
+
+  const values = client.spreadsheets.values;
+  values.update = guard(values.update.bind(values) as WriteCall) as typeof values.update;
+  values.append = guard(values.append.bind(values) as WriteCall) as typeof values.append;
+  values.batchUpdate = guard(values.batchUpdate.bind(values) as WriteCall) as typeof values.batchUpdate;
+  client.spreadsheets.batchUpdate = guard(
+    client.spreadsheets.batchUpdate.bind(client.spreadsheets) as WriteCall
+  ) as typeof client.spreadsheets.batchUpdate;
+
+  return client;
 }
 
 async function findRowById(sheetName: string, id: string): Promise<number | null> {
@@ -1369,6 +1470,8 @@ export async function fetchPathwayRecord(id: string): Promise<PathwayRecord | nu
   return records[id] || null;
 }
 
+type PathwayIdentity = Partial<Pick<PathwayRecord, 'name' | 'record_type' | 'cohort'>>;
+
 export interface SavePathwayResult {
   ok: boolean;
   available: boolean;
@@ -1388,7 +1491,11 @@ export interface SavePathwayResult {
 export async function savePathwayRecord(
   id: string,
   data: Partial<Pick<PathwayRecord, 'policy_areas' | 'target_pathways' | 'pathway_override' | 'notes'>>,
-  person?: Partial<Pick<PathwayRecord, 'name' | 'record_type' | 'cohort'>>
+  // Either the identity values, or a function that fetches them. The function
+  // form is only invoked when a row actually has to be created, which keeps the
+  // common case — updating a row that already exists — from reading the Fellows
+  // and Alumni tabs for values it will never use.
+  person?: PathwayIdentity | (() => Promise<PathwayIdentity | undefined>)
 ): Promise<SavePathwayResult> {
   const shape = await readPathwaySheet();
   if (!shape) {
@@ -1436,6 +1543,8 @@ export async function savePathwayRecord(
     return { ok: missingColumns.length === 0, available: true, created: false, missingColumns, last_updated: stamp };
   }
 
+  const identity = typeof person === 'function' ? await person() : person;
+
   // No row yet — append one. Identity columns come from the caller, since the
   // Fellows/Alumni tabs are the source of truth for name, cohort and status.
   const width = Math.max(shape.headers.length, ...Object.values(shape.cols).map((i) => i + 1));
@@ -1446,9 +1555,9 @@ export async function savePathwayRecord(
     row[col] = value;
   };
   put('id', id);
-  put('name', person?.name || '');
-  put('type', person?.record_type || '');
-  put('cohort', person?.cohort || '');
+  put('name', identity?.name || '');
+  put('type', identity?.record_type || '');
+  put('cohort', identity?.cohort || '');
   put('areas', values.areas || '');
   put('targets', values.targets || '');
   put('override', values.override || '');

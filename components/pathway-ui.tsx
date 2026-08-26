@@ -450,6 +450,14 @@ export function FellowPathwayTab({
     setLoading(true);
     try {
       const res = await fetch(`/api/fellows/${encodeURIComponent(fellow.id)}/pathway`);
+      if (res.status === 429) {
+        // Google's per-minute quota. Say what it is and what to do, rather than
+        // "could not load", which reads like the data is missing.
+        const body = await res.json().catch(() => ({}));
+        setLoadError(body.error || 'Google is rate-limiting the spreadsheet. Wait about a minute and reopen this tab.');
+        setLoading(false);
+        return;
+      }
       if (!res.ok) throw new Error('failed');
       const json: PathwayResponse = await res.json();
       setData(json);
