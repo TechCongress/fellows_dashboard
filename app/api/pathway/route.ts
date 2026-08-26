@@ -22,6 +22,21 @@ async function authed() {
 }
 
 /**
+ * Google's spreadsheet quota is 60 reads a minute per person, and it resets on
+ * its own. The client retries a 429 a few times before it ever reaches here, so
+ * if one still surfaces, the answer really is "wait" — say that, rather than
+ * showing a generic failure the person can only answer by clicking Save again.
+ */
+function isRateLimit(err: unknown): boolean {
+  const status = (err as { code?: number; status?: number })?.code
+    ?? (err as { code?: number; status?: number })?.status;
+  return status === 429;
+}
+
+const RATE_LIMIT_MESSAGE =
+  'Google is rate-limiting the spreadsheet right now. Nothing was saved — wait about a minute and try again.';
+
+/**
  * GET /api/pathway            — setup status plus every tagging record
  * GET /api/pathway?id=a1      — one person, including their derived pathway
  */
@@ -78,6 +93,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to read pathway data:', err);
+    if (isRateLimit(err)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 });
     return NextResponse.json({ error: 'Failed to read pathway data' }, { status: 500 });
   }
 }
@@ -128,16 +144,19 @@ export async function PATCH(req: NextRequest) {
 
     // Identity columns for a row that has to be created. The Fellows and Alumni
     // tabs stay the source of truth for name, cohort, and which they are.
-    const [fellows, alumni] = await Promise.all([fetchFellows(), fetchAlumni()]);
-    const fellow = fellows.find((f) => f.id === id);
-    const alum = alumni.find((a) => a.id === id);
-    const person = fellow
-      ? { name: fellow.name, record_type: 'Current Fellow', cohort: fellow.cohort }
-      : alum
-      ? { name: alum.name, record_type: 'Alumni', cohort: alum.cohort }
-      : undefined;
-
-    const result = await savePathwayRecord(id, patch, person);
+    //
+    // Passed as a function rather than a value: most saves update a row that
+    // already exists, and reading both tabs to fill columns that are already
+    // populated is what pushed this route over Google's per-minute read quota.
+    // Now those two reads only happen on the save that creates the row.
+    const result = await savePathwayRecord(id, patch, async () => {
+      const [fellows, alumni] = await Promise.all([fetchFellows(), fetchAlumni()]);
+      const fellow = fellows.find((f) => f.id === id);
+      if (fellow) return { name: fellow.name, record_type: 'Current Fellow', cohort: fellow.cohort };
+      const alum = alumni.find((a) => a.id === id);
+      if (alum) return { name: alum.name, record_type: 'Alumni', cohort: alum.cohort };
+      return undefined;
+    });
 
     if (!result.available) {
       return NextResponse.json(
@@ -164,6 +183,7 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (err) {
     console.error('Failed to save pathway tags:', err);
+    if (isRateLimit(err)) return NextResponse.json({ error: RATE_LIMIT_MESSAGE }, { status: 429 });
     return NextResponse.json({ error: 'Failed to save pathway tags' }, { status: 500 });
   }
 }

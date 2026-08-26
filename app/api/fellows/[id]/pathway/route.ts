@@ -119,6 +119,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     });
   } catch (err) {
     console.error('Failed to compute pathway matches:', err);
+    const status = (err as { code?: number; status?: number })?.code
+      ?? (err as { code?: number; status?: number })?.status;
+    if (status === 429) {
+      return NextResponse.json(
+        { error: 'Google is rate-limiting the spreadsheet right now. Wait about a minute and reopen this tab.' },
+        { status: 429 }
+      );
+    }
     return NextResponse.json({ error: 'Failed to compute matches' }, { status: 500 });
   }
 }
