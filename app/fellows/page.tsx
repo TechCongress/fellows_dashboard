@@ -186,6 +186,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
   const [moveForm, setMoveForm] = useState({ current_role: '', sector: '', location: '' });
   const [moveSaving, setMoveSaving] = useState(false);
   const [moveDone, setMoveDone] = useState(false);
+  const [moveError, setMoveError] = useState('');
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const [showLogReport, setShowLogReport] = useState(false);
@@ -713,42 +714,40 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
                   </div>
                 ))}
               </div>
+              {moveError && (
+                <p className="mx-6 mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {moveError}
+                </p>
+              )}
               <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
                 <button onClick={() => setShowMoveModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
                 <button disabled={moveSaving} onClick={async () => {
                   setMoveSaving(true);
+                  setMoveError('');
                   try {
-                    await fetch('/api/alumni', {
+                    // One request, server-side: creates the alumni row with the
+                    // fellow's own ID — so their career history, pathway tagging,
+                    // check-ins and status reports stay attached — then removes
+                    // the Fellows row. Doing both here in the browser meant a
+                    // failure between the two steps passed silently.
+                    const res = await fetch('/api/fellows/move-to-alumni', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        name: fellow.name,
-                        email: fellow.email,
-                        phone: fellow.phone,
-                        linkedin: fellow.linkedin,
-                        cohort: fellow.cohort,
-                        fellow_types: [fellow.fellow_type],
-                        office_served: fellow.office,
-                        chamber: fellow.chamber,
-                        party: fellow.party,
-                        education: fellow.education,
-                        prior_role: fellow.prior_role,
-                        notes: fellow.notes,
+                        id: fellow.id,
                         current_role: moveForm.current_role,
                         sector: moveForm.sector,
                         location: moveForm.location,
-                        contact: true,
-                        served_on_hill: true,
-                        currently_on_hill: false,
                       }),
                     });
-                    // Delete the fellow row from the Google Sheet
-                    await fetch('/api/fellows', {
-                      method: 'DELETE',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ id: fellow.id }),
-                    });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok || !json.ok) {
+                      setMoveError(json.error || 'Could not move to alumni. Please try again.');
+                      return;
+                    }
                     setMoveDone(true);
+                  } catch {
+                    setMoveError('Network error — nothing was changed. Please try again.');
                   } finally {
                     setMoveSaving(false);
                   }

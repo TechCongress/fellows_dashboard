@@ -604,6 +604,8 @@ interface AlumniPathwayResponse {
     notes: string;
     over_cap?: ('policy_areas' | 'target_pathways')[];
   } | null;
+  person_type?: 'alumni' | 'unknown';
+  has_history?: boolean;
   careerHistoryAvailable: boolean;
   derivation: {
     pathways: string[];
@@ -709,7 +711,14 @@ export function AlumniPathwayTab({
           </>
         )}
 
-        {!loading && d && d.pathways.length === 0 && (
+        {!loading && d && d.pathways.length === 0 && !data?.has_history && (
+          <p className="text-sm text-gray-400">
+            No career history recorded yet. Add their roles on the <em>Background &amp; Career History</em> tab
+            and their pathway will be read from those.
+          </p>
+        )}
+
+        {!loading && d && d.pathways.length === 0 && data?.has_history && (
           <p className="text-sm text-gray-400">
             No pathway could be read from their career history. Add a role marked <em>Current</em> on the
             Background &amp; Career History tab, or set an override below.
@@ -718,7 +727,9 @@ export function AlumniPathwayTab({
 
         {!loading && !d && (
           <p className="text-sm text-gray-400">
-            Pathways are derived for alumni only. This person is recorded as a current fellow.
+            Couldn&rsquo;t find this person on the Alumni tab, so there&rsquo;s nothing to derive a pathway
+            from. Check that their <strong>ID</strong> on the Alumni tab hasn&rsquo;t changed or been
+            duplicated.
           </p>
         )}
       </div>
