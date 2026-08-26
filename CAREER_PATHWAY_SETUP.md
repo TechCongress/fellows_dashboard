@@ -14,7 +14,7 @@ request time, so **no redeploy is needed** after you edit the sheet.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 33 tags in §4 |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 34 tags in §4 |
 | `Target Pathways` | Multi-select dropdown (chips) | 2 | The 9 tags in §5 |
 
 Turns on: the tag editors on each fellow's **Career Pathway** tab, and their
@@ -24,7 +24,7 @@ half of the alumni matching.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 33 tags — must be the identical list as the Fellows tab |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 34 tags — must be the identical list as the Fellows tab |
 | `Realized Pathway` | Single-select dropdown | 1 | The 9 tags in §5 |
 
 Turns on: the tag editors on each alum's **Career Pathway** tab, and the other
@@ -105,7 +105,7 @@ before the Fellowship row.
 
 ---
 
-## 4. Policy Issue Areas — the 33-tag source list
+## 4. Policy Issue Areas — the 34-tag source list
 
 Paste this column into a hidden source range and point both multi-select
 dropdowns at it. **This list is completely separate from the Accomplishments
@@ -114,6 +114,7 @@ between them, ever.
 
 ```
 Artificial Intelligence
+Algorithmic Bias & Accountability
 Cybersecurity
 Data Privacy
 Telecommunications & Broadband
@@ -150,6 +151,28 @@ International Cyber Policy
 
 The API rejects anything not on this list, so a typo in the sheet reads as
 "untagged" rather than silently adding a new one.
+
+### Where `Algorithmic Bias & Accountability` stops
+
+Added 2026-08-26. Yes, it lives under Artificial Intelligence conceptually — the
+reason to define it separately is that it names a distinct question, and several
+fellows are working on exactly that question rather than on AI generally.
+
+- Use it for **how an automated system's outputs affect people, and who answers
+  for them** — disparate impact in hiring, lending, housing, insurance, or
+  criminal justice; explainability and "black box" concerns; audit requirements,
+  impact assessments, and liability for automated decisions.
+- Use **`Artificial Intelligence`** for everything else about AI — capability,
+  safety, procurement, model policy, compute.
+- Use **`Antitrust & Big Tech Accountability`** for market power and platform
+  conduct. Both tags contain the word "accountability" and they mean different
+  things: this one is accountability for a *decision a system made*, that one is
+  accountability for a *company's market behaviour*.
+- Use **`Criminal Justice & Technology`** when the criminal-justice setting is
+  the point rather than the algorithm.
+
+Rule of thumb: if the concern is *who the output harms and who has to answer for
+it*, it's this tag.
 
 ### Where `US-China Tech Competition` stops
 
