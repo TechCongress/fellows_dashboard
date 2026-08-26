@@ -602,8 +602,15 @@ async function getAlumniHeaders(): Promise<string[]> {
   return (res.data.values?.[0] || []) as string[];
 }
 
-export async function createAlumni(data: Partial<Alumni>): Promise<boolean> {
-  const id = newId();
+/**
+ * `keepId` exists for the fellow → alumni move. Everything about a person is
+ * keyed to their ID: career history, pathway tagging, check-ins, status
+ * reports. Minting a fresh ID on the move silently stranded all of it under an
+ * ID whose Fellows row was then deleted, and the new alumni record started
+ * blank. The move passes the fellow's own ID so the person keeps their history.
+ */
+export async function createAlumni(data: Partial<Alumni>, keepId?: string): Promise<boolean> {
+  const id = keepId || newId();
   const headers = await getAlumniHeaders();
   const map = alumniDataMap(id, data);
   const row = headers.map(h => map[h] ?? '');

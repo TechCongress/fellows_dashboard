@@ -62,19 +62,39 @@ export async function GET(req: NextRequest) {
     // Derivation is for alumni only: a current fellow's Current role IS the
     // fellowship, which would derive "Stay in Congress" for everyone placed in
     // a Senate office.
-    const isAlumni = (record?.record_type || '').toLowerCase().includes('alum');
-    const alum = isAlumni ? (await fetchAlumni()).find((a) => a.id === id) : undefined;
-    const derived = isAlumni
+    //
+    // Who counts as an alum is decided by the Fellows and Alumni tabs, NOT by
+    // the Record Type column on the Career Pathways Engine tab. Record Type is
+    // a readable label; it only exists once someone has been tagged. Trusting
+    // it meant an alum with a full career history derived nothing until a staff
+    // member happened to tag them — and the tab then told them, wrongly, that
+    // the person was a current fellow. The matching route has always used the
+    // Alumni tab directly, so this also makes the two agree.
+    //
+    // Only the alumni modal calls this route, so the caller has already
+    // established that this is an alum — being on the Alumni tab is the whole
+    // test. An earlier version also checked the Fellows tab and let it win a
+    // tie, which was a mistake: it imported a concern from the PATCH handler
+    // (which genuinely serves both fellows and alumni) into a GET that never
+    // sees a fellow, and any stale or duplicated Fellows row silently
+    // suppressed a real alum's pathway.
+    const alum = (await fetchAlumni()).find((a) => a.id === id);
+    const derived = alum
       ? deriveAlumniPathways(
           history.entries,
           record?.pathway_override,
-          alum ? { current_role: alum.current_role, sector: alum.sector } : undefined
+          { current_role: alum.current_role, sector: alum.sector }
         )
       : null;
 
     return NextResponse.json({
       setup,
       record,
+      // Lets the UI tell three situations apart that used to share one message:
+      // not an alum at all, an alum with no history yet, and an alum whose
+      // history didn't derive anything.
+      person_type: alum ? 'alumni' : 'unknown',
+      has_history: history.entries.length > 0,
       careerHistoryAvailable: history.available,
       derivation: derived && {
         pathways: derived.pathways,
