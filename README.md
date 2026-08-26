@@ -59,7 +59,7 @@ Alumni tabs. Every field is looked up by header name at request time, so columns
 can be reordered freely and no redeploy is needed after editing the sheet.
 
 #### Career Pathway tab (fellows)
-- **Policy Issue Areas** — up to 3 from a fixed 33-tag taxonomy
+- **Policy Issue Areas** — up to 3 from a fixed 34-tag taxonomy
 - **Target Post-Fellowship Pathways** — up to 2 from a fixed 9-tag list
 - **Recommended Alumni Connections** — the top-scoring alumni, each with the
   overlap that earned the match and a fixed-template intro email draft

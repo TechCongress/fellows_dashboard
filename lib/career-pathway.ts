@@ -68,10 +68,10 @@ export function normalizePathway(value: string): string {
   return LEGACY_PATHWAYS[v] || v;
 }
 
-// ── Policy issue areas (33 tags / 8 categories) ────────────────────────────────────
+// ── Policy issue areas (34 tags / 8 categories) ────────────────────────────────────
 
 export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
-  { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Quantum Computing', 'Digital Infrastructure', 'Open Source & Software Policy'] },
+  { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Algorithmic Bias & Accountability', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Quantum Computing', 'Digital Infrastructure', 'Open Source & Software Policy'] },
   { group: 'Health & Science', tags: ['Digital Health & Wearables', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy'] },
   { group: 'National Security & Defense', tags: ['Defense Technology', 'Intelligence & Surveillance', 'Election Security', 'Critical Infrastructure Protection'] },
   { group: 'Economy & Labor', tags: ['Future of Work & Automation', 'Financial Technology', 'Antitrust & Big Tech Accountability', 'Workforce Development'] },
