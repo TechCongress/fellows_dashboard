@@ -27,6 +27,13 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - 3 consecutive on-time submissions → $50 restaurant gift card
 - 2+ missed reports → reimbursements paused
 
+**Milestone email.** When an on-time submission takes a fellow to a multiple of 3
+consecutive on-time reports, the dashboard emails `hello@techcongress.io` naming
+the fellow, the month, the streak, and the number of gift cards earned so far.
+Sent via [Resend](https://resend.com); requires `RESEND_API_KEY`. If the key
+isn't set the check is skipped, and if the send fails it's logged without failing
+the save — a status report is never lost because an email didn't go out.
+
 ### Alumni
 - Add, edit, and view alumni profiles with career and engagement tracking
 - Multi-select fellow type support (fellows can hold multiple designations)
@@ -146,7 +153,8 @@ fellows_dashboard/
 │       ├── alumni/route.ts         # Alumni CRUD
 │       ├── events/route.ts         # Events CRUD
 │       ├── attendance/route.ts     # Attendance batch save
-│       └── accomplishments/        # Accomplishments (read-only)
+│       ├── accomplishments/        # Accomplishments (read-only, separate sheet)
+│       └── debug-accomplishments/  # Diagnostic endpoint for the above
 ├── components/
 │   ├── pathway-ui.tsx              # Career Pathway tabs, tag pickers, match cards
 │   └── career-history.tsx          # Career timeline + history editor
@@ -183,7 +191,20 @@ GCP_CLIENT_EMAIL=your-service-account@project.iam.gserviceaccount.com
 GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 FORM_RESPONSES_URL=https://docs.google.com/spreadsheets/d/...
 DASHBOARD_PASSWORD=your_password_here
+ACCOMPLISHMENT_SHEET_ID=separate_accomplishments_spreadsheet_id
+RESEND_API_KEY=your_resend_key_here
+SHEETS_READ_WINDOW_MS=3000
 ```
+
+| Variable | Required? | What it's for |
+|---|---|---|
+| `SPREADSHEET_ID` | Yes | The main Fellows spreadsheet |
+| `GCP_CLIENT_EMAIL`, `GCP_PRIVATE_KEY` | Yes | Service account credentials |
+| `DASHBOARD_PASSWORD` | Yes | Password gate for the whole app |
+| `FORM_RESPONSES_URL` | For report sync | Google Form responses sheet |
+| `ACCOMPLISHMENT_SHEET_ID` | For Accomplishments | **A separate spreadsheet** from the main one — the Accomplishments page throws without it |
+| `RESEND_API_KEY` | Optional | Streak milestone emails. Unset means no emails; nothing else changes |
+| `SHEETS_READ_WINDOW_MS` | Optional | Read-cache window in ms, default `3000`. Set to `0` to disable caching |
 
 **3. Run**
 ```bash
@@ -224,7 +245,10 @@ git push --set-upstream origin feature-name
 
 ## Google Sheets Structure
 
-The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Alumni Career History**.
+The dashboard reads from and writes to one main Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Alumni Career History**.
+
+**Accomplishments are the exception** — they live in a second, separate
+spreadsheet identified by `ACCOMPLISHMENT_SHEET_ID`, and are read-only.
 
 Missing tabs and missing columns degrade gracefully: the feature goes read-only
 and the dashboard shows an amber note naming the exact column to add, rather than
