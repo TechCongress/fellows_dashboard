@@ -104,6 +104,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       target_pathways: targetPathways,
       tagged: policyAreas.length > 0 || targetPathways.length > 0,
       last_updated: record?.last_updated || '',
+      notes: record?.notes || '',
       over_cap: record?.over_cap || [],
       alumni_total: alumni.length,
       alumni_tagged: taggedAlumni.length,

@@ -120,6 +120,17 @@ function cap(areas: string[], targets: string[]) {
   };
 }
 
+/**
+ * Writes use valueInputOption: 'USER_ENTERED' so that dates land as real dates
+ * rather than text. The cost is that a cell beginning with = + - or @ is parsed
+ * as a formula, which for a free-text note means "Sheets shows #NAME? instead of
+ * what someone typed". A leading apostrophe is the sheet's own escape for
+ * "treat this as text" and isn't displayed in the cell.
+ */
+function escapeFormula(text: string): string {
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
 function serializeTags(tags: string[] | undefined): string {
   return Array.isArray(tags) ? tags.filter(Boolean).join(', ') : '';
 }
@@ -1376,7 +1387,7 @@ export interface SavePathwayResult {
  */
 export async function savePathwayRecord(
   id: string,
-  data: Partial<Pick<PathwayRecord, 'policy_areas' | 'target_pathways' | 'pathway_override'>>,
+  data: Partial<Pick<PathwayRecord, 'policy_areas' | 'target_pathways' | 'pathway_override' | 'notes'>>,
   person?: Partial<Pick<PathwayRecord, 'name' | 'record_type' | 'cohort'>>
 ): Promise<SavePathwayResult> {
   const shape = await readPathwaySheet();
@@ -1399,6 +1410,9 @@ export async function savePathwayRecord(
   // save would put a stale label back into the sheet.
   if (data.target_pathways) values.targets = serializeTags(data.target_pathways.map(normalizePathway));
   if (data.pathway_override !== undefined) values.override = normalizePathway(data.pathway_override || '');
+  // Free text, stored verbatim apart from trimming. Newlines survive the round
+  // trip — the Sheets API keeps them inside the cell.
+  if (data.notes !== undefined) values.notes = escapeFormula((data.notes || '').trim());
 
   const idCol = shape.cols.id;
   let rowNum = 0;
@@ -1438,6 +1452,7 @@ export async function savePathwayRecord(
   put('areas', values.areas || '');
   put('targets', values.targets || '');
   put('override', values.override || '');
+  put('notes', values.notes || '');
   put('updated', stamp);
 
   await sheets.spreadsheets.values.append({
