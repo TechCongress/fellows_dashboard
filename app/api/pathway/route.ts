@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * PATCH /api/pathway
- * Body: { id, policy_areas?, target_pathways?, pathway_override? }
+ * Body: { id, policy_areas?, target_pathways?, pathway_override?, notes? }
  *
  * Writes to the Career Pathways Engine tab, creating the person's row if they
  * don't have one. Only the fields supplied are written, so a partial save can't
@@ -116,6 +116,11 @@ export async function PATCH(req: NextRequest) {
     if (body.pathway_override !== undefined) {
       const override = normalizePathway(body.pathway_override || '');
       patch.pathway_override = PATHWAY_NAMES.includes(override) ? override : '';
+    }
+    if (body.notes !== undefined) {
+      // Free text — no taxonomy to clamp to. Bounded only so a runaway paste
+      // can't push the row past what a Sheets cell will hold (50k characters).
+      patch.notes = String(body.notes || '').slice(0, 5000);
     }
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

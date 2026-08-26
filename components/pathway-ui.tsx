@@ -189,6 +189,90 @@ function TagBlock({
   );
 }
 
+/**
+ * One free-text note per person, stored in the Notes column of their row on the
+ * Career Pathways Engine tab. Deliberately an explicit Edit/Save rather than
+ * save-on-blur: every save is a write to the spreadsheet, and Google's per-user
+ * quota is low enough that autosaving each keystroke pause would burn it.
+ */
+function NotesBlock({
+  notes,
+  editable,
+  onSave,
+}: {
+  notes: string;
+  editable: boolean;
+  onSave: (next: string) => Promise<string | null>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(notes);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // The note can arrive after first render (the tab fetches), and can change
+  // when another save reloads the record — keep the field in step unless the
+  // user is mid-edit, where clobbering their typing would be worse.
+  useEffect(() => { if (!editing) setDraft(notes); }, [notes, editing]);
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    const err = await onSave(draft.trim());
+    setSaving(false);
+    if (err) { setError(err); return; }
+    setEditing(false);
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          Notes
+          <span className="ml-2 normal-case tracking-normal font-normal text-gray-300">career conversations, goals, context</span>
+        </h3>
+        {editable && !editing && (
+          <button onClick={() => { setDraft(notes); setError(''); setEditing(true); }}
+            className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+            {notes ? 'Edit' : 'Add'}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        notes ? (
+          // whitespace-pre-wrap so paragraph breaks typed into the box survive.
+          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notes}</p>
+        ) : (
+          <p className="text-sm text-gray-400">No notes yet.</p>
+        )
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-3">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            autoFocus
+            placeholder="What are they hoping to do next? Who have they talked to? Anything worth remembering before the next check-in."
+            className="w-full text-sm rounded-lg border border-gray-200 px-3 py-2 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 resize-y"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-gray-400">{draft.length}/5000</span>
+            <div className="flex gap-2">
+              <button onClick={() => { setDraft(notes); setEditing(false); }}
+                className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">Cancel</button>
+              <button onClick={save} disabled={saving}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+          {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Alumni match card ────────────────────────────────────────────────────────
 
 function MatchCard({ fellow, match, senderName }: { fellow: Fellow; match: AlumniMatch; senderName: string }) {
@@ -338,6 +422,7 @@ interface PathwayResponse {
   target_pathways: string[];
   tagged: boolean;
   last_updated: string;
+  notes: string;
   over_cap?: ('policy_areas' | 'target_pathways')[];
   alumni_total: number;
   alumni_tagged: number;
@@ -400,6 +485,28 @@ export function FellowPathwayTab({
     [fellow, onFellowUpdate, load]
   );
 
+  const saveNotes = useCallback(
+    async (next: string): Promise<string | null> => {
+      try {
+        const res = await fetch('/api/pathway', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: fellow.id, notes: next }),
+        });
+        const json = await res.json();
+        if (!res.ok) return json.error || 'Failed to save.';
+        // Reflect it immediately rather than waiting on the reload, so the note
+        // doesn't blink back to its old text for a beat.
+        setData((cur) => (cur ? { ...cur, notes: next } : cur));
+        load();
+        return null;
+      } catch {
+        return 'Network error. Please try again.';
+      }
+    },
+    [fellow.id, load]
+  );
+
   if (fellow.status === 'Withdrew') {
     return <p className="text-sm text-gray-400">This fellow withdrew from the program — pathway tracking is not applicable.</p>;
   }
@@ -433,6 +540,8 @@ export function FellowPathwayTab({
         max={MAX_TARGET_PATHWAYS}
         onSave={(next) => savePathway(areas, next)}
       />
+
+      <NotesBlock notes={data?.notes || ''} editable={canEdit} onSave={saveNotes} />
 
       <OverCapNotice fields={data?.over_cap} />
 
@@ -484,6 +593,7 @@ interface AlumniPathwayResponse {
     policy_areas: string[];
     pathway_override: string;
     last_updated: string;
+    notes: string;
     over_cap?: ('policy_areas' | 'target_pathways')[];
   } | null;
   careerHistoryAvailable: boolean;
@@ -524,7 +634,7 @@ export function AlumniPathwayTab({
   useEffect(() => { load(); }, [load]);
 
   const save = useCallback(
-    async (patch: { policy_areas?: string[]; pathway_override?: string }): Promise<string | null> => {
+    async (patch: { policy_areas?: string[]; pathway_override?: string; notes?: string }): Promise<string | null> => {
       try {
         const res = await fetch('/api/pathway', {
           method: 'PATCH',
@@ -630,6 +740,12 @@ export function AlumniPathwayTab({
         max={1}
         singleSelect
         onSave={(next) => save({ pathway_override: next[0] || '' })}
+      />
+
+      <NotesBlock
+        notes={data?.record?.notes || ''}
+        editable={canEdit}
+        onSave={(next) => save({ notes: next })}
       />
 
       <OverCapNotice fields={data?.record?.over_cap} />
