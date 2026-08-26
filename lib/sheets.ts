@@ -1,8 +1,8 @@
 import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
-import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase } from '@/types';
-import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector } from '@/lib/career-pathway';
+import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase, PathwayRecord } from '@/types';
+import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector, normalizePathway, MAX_POLICY_AREAS, MAX_TARGET_PATHWAYS } from '@/lib/career-pathway';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -103,12 +103,35 @@ export function parseTags(cell: string | undefined): string[] {
     .filter((t, i, arr) => arr.indexOf(t) === i);
 }
 
+/**
+ * Google Sheets multi-select dropdowns don't enforce a maximum, so a cell can
+ * legitimately come back with more values than the taxonomy caps allow. The
+ * extras are dropped for scoring and flagged, never written back — the sheet
+ * keeps whatever was picked; the dashboard just says which ones it's using.
+ */
+function cap(areas: string[], targets: string[]) {
+  const over: ('policy_areas' | 'target_pathways')[] = [];
+  if (areas.length > MAX_POLICY_AREAS) over.push('policy_areas');
+  if (targets.length > MAX_TARGET_PATHWAYS) over.push('target_pathways');
+  return {
+    policy_areas: areas.slice(0, MAX_POLICY_AREAS),
+    target_pathways: targets.slice(0, MAX_TARGET_PATHWAYS),
+    over_cap: over,
+  };
+}
+
 function serializeTags(tags: string[] | undefined): string {
   return Array.isArray(tags) ? tags.filter(Boolean).join(', ') : '';
 }
 
 export async function fetchFellows(): Promise<Fellow[]> {
-  const rows = await getSheetValues('Fellows');
+  // Tagging lives on the Career Pathways Engine tab, so it's joined in here.
+  // That keeps `fellow.policy_areas` meaning "this person's tags" for every
+  // existing caller — cards, modal, matching — with no changes at the call site.
+  const [rows, pathways] = await Promise.all([
+    getSheetValues('Fellows'),
+    fetchPathwayRecords().catch(() => ({ records: {} as Record<string, PathwayRecord> })),
+  ]);
   const records = rowsToObjects(rows);
   return records.filter((r) => r['ID'] || r['Name']).map((r) => ({
     id: r['ID'] || '',
@@ -135,10 +158,10 @@ export async function fetchFellows(): Promise<Fellow[]> {
     report_end_month: r['Report End Month'] || '',
     onboarding_completed: r['Onboarding Completed Tasks'] || '',
     offboarding_completed: r['Offboarding Completed Tasks'] || '',
-    // Career Pathway columns — absent until the columns are added to the tab,
-    // in which case these read as empty rather than breaking the fetch.
-    policy_areas: parseTags(r[FELLOW_POLICY_AREAS_COL]),
-    target_pathways: parseTags(r[FELLOW_TARGET_PATHWAYS_COL]),
+    // From the Career Pathways Engine tab, or empty when that tab or the
+    // person's row doesn't exist yet.
+    policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
+    target_pathways: pathways.records[r['ID'] || '']?.target_pathways || [],
   }));
 }
 
@@ -168,8 +191,6 @@ function fellowDataMap(id: string, d: Partial<Fellow>): Record<string, string> {
     'Report End Month': d.report_end_month || '',
     'Onboarding Completed Tasks': d.onboarding_completed || '',
     'Offboarding Completed Tasks': d.offboarding_completed || '',
-    [FELLOW_POLICY_AREAS_COL]: serializeTags(d.policy_areas),
-    [FELLOW_TARGET_PATHWAYS_COL]: serializeTags(d.target_pathways),
   };
 }
 
@@ -364,7 +385,10 @@ export async function logStatusReport(data: {
 // ── Alumni ──────────────────────────────────────────────────────────────────
 
 export async function fetchAlumni(): Promise<Alumni[]> {
-  const rows = await getSheetValues('Alumni');
+  const [rows, pathways] = await Promise.all([
+    getSheetValues('Alumni'),
+    fetchPathwayRecords().catch(() => ({ records: {} as Record<string, PathwayRecord> })),
+  ]);
   const records = rowsToObjects(rows);
   return records.filter((r) => r['ID'] || r['Name']).map((r) => ({
     id: r['ID'] || '',
@@ -391,8 +415,11 @@ export async function fetchAlumni(): Promise<Alumni[]> {
     education: r['Education'] || '',
     served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
     currently_on_hill: toBool(r['Currently on the Hill?']),
-    policy_areas: parseTags(r[ALUMNI_POLICY_AREAS_COL]),
-    realized_pathway: (r[ALUMNI_REALIZED_PATHWAY_COL] || '').trim(),
+    policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
+    // Only ever the manual override. The real realized pathway is DERIVED from
+    // career history at the point of use — see lib/pathway-derivation.ts — so
+    // there is deliberately no stored column for it.
+    realized_pathway: pathways.records[r['ID'] || '']?.pathway_override || '',
   }));
 }
 
@@ -451,8 +478,6 @@ function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
     'Last Engaged': d.last_engaged || '',
     'Engagement Notes': d.engagement_notes || '',
     'Notes': d.notes || '',
-    [ALUMNI_POLICY_AREAS_COL]: serializeTags(d.policy_areas),
-    [ALUMNI_REALIZED_PATHWAY_COL]: (d.realized_pathway || '').trim(),
   };
 }
 
@@ -893,104 +918,9 @@ export async function saveAttendanceBatch(
   return true;
 }
 
-// ── Career Pathway Engine ────────────────────────────────────────────────────
-//
-// Three new columns on existing tabs plus one new tab. None of them are
-// required: every read below tolerates a missing column or missing tab and
-// degrades to empty, and every write reports precisely which column is absent
-// so the UI can tell staff exactly what to add to the sheet.
+// ── Alumni Career History ────────────────────────────────────────────────────
 
-export const FELLOW_POLICY_AREAS_COL = 'Policy Issue Areas';
-export const FELLOW_TARGET_PATHWAYS_COL = 'Target Pathways';
-export const ALUMNI_POLICY_AREAS_COL = 'Policy Issue Areas';
-export const ALUMNI_REALIZED_PATHWAY_COL = 'Realized Pathway';
 export const CAREER_HISTORY_SHEET = 'Alumni Career History';
-
-export interface PathwaySetupStatus {
-  fellowsPolicyAreas: boolean;
-  fellowsTargetPathways: boolean;
-  alumniPolicyAreas: boolean;
-  alumniRealizedPathway: boolean;
-  careerHistoryTab: boolean;
-}
-
-/** Which Career Pathway columns/tabs actually exist right now. */
-export async function pathwaySetupStatus(): Promise<PathwaySetupStatus> {
-  const [fellowHeaders, alumniHeaders, historyRows] = await Promise.all([
-    getFellowHeaders().catch(() => [] as string[]),
-    getAlumniHeaders().catch(() => [] as string[]),
-    getSheetValuesSafe(CAREER_HISTORY_SHEET),
-  ]);
-  return {
-    fellowsPolicyAreas: fellowHeaders.includes(FELLOW_POLICY_AREAS_COL),
-    fellowsTargetPathways: fellowHeaders.includes(FELLOW_TARGET_PATHWAYS_COL),
-    alumniPolicyAreas: alumniHeaders.includes(ALUMNI_POLICY_AREAS_COL),
-    alumniRealizedPathway: alumniHeaders.includes(ALUMNI_REALIZED_PATHWAY_COL),
-    careerHistoryTab: historyRows !== null,
-  };
-}
-
-export interface ColumnWriteResult {
-  ok: boolean;
-  missingColumns: string[];
-}
-
-/**
- * Write only the pathway cells for one person, leaving every other column
- * untouched. Safer than rewriting the whole row (which is what the general
- * update path does) and it makes a missing column an explicit, reportable
- * outcome instead of a silently dropped value.
- */
-async function writeNamedCells(
-  sheetName: string,
-  headers: string[],
-  rowNum: number,
-  values: Record<string, string>
-): Promise<ColumnWriteResult> {
-  const missingColumns: string[] = [];
-  const data: { range: string; values: string[][] }[] = [];
-  for (const [header, value] of Object.entries(values)) {
-    const idx = headers.indexOf(header);
-    if (idx === -1) { missingColumns.push(header); continue; }
-    data.push({ range: `${sheetName}!${columnLetter(idx)}${rowNum}`, values: [[value]] });
-  }
-  if (data.length > 0) {
-    const sheets = await getSheetsClient();
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: getSpreadsheetId(),
-      requestBody: { valueInputOption: 'USER_ENTERED', data },
-    });
-  }
-  return { ok: missingColumns.length === 0, missingColumns };
-}
-
-export async function updateFellowPathway(
-  id: string,
-  policyAreas: string[],
-  targetPathways: string[]
-): Promise<ColumnWriteResult> {
-  const headers = await getFellowHeaders();
-  const rowNum = await findRowById('Fellows', id);
-  if (!rowNum) return { ok: false, missingColumns: [] };
-  return writeNamedCells('Fellows', headers, rowNum, {
-    [FELLOW_POLICY_AREAS_COL]: serializeTags(policyAreas),
-    [FELLOW_TARGET_PATHWAYS_COL]: serializeTags(targetPathways),
-  });
-}
-
-export async function updateAlumniPathway(
-  id: string,
-  policyAreas: string[],
-  realizedPathway: string
-): Promise<ColumnWriteResult> {
-  const headers = await getAlumniHeaders();
-  const rowNum = await findRowById('Alumni', id);
-  if (!rowNum) return { ok: false, missingColumns: [] };
-  return writeNamedCells('Alumni', headers, rowNum, {
-    [ALUMNI_POLICY_AREAS_COL]: serializeTags(policyAreas),
-    [ALUMNI_REALIZED_PATHWAY_COL]: (realizedPathway || '').trim(),
-  });
-}
 
 // ── Alumni Career History tab ────────────────────────────────────────────────
 
@@ -1288,4 +1218,237 @@ export async function saveCareerHistory(
   }
 
   return { ok: true, available: true, saved: clean.length };
+}
+
+// ── Career Pathways Engine tab ───────────────────────────────────────────────
+//
+// One row per person, fellows and alumni together, holding the tagging that
+// drives matching. This replaces the earlier design of hanging pathway columns
+// off the Fellows and Alumni tabs.
+//
+// Note there is no "Realized Pathway" column: an alum's pathway is derived from
+// their career history (see lib/pathway-derivation.ts) so it can't go stale.
+// The only hand-kept pathway value is `Pathway Override`, and it should be
+// blank for almost everyone.
+
+/**
+ * Tab name candidates, in priority order. The plural is what exists today; the
+ * singular is kept as a fallback so a rename doesn't silently read as an empty
+ * tab — which is how a wrong tab name fails, since a missing tab isn't an error.
+ */
+const PATHWAY_SHEET_NAMES = ['Career Pathways Engine', 'Career Pathway Engine'];
+
+const PATHWAY_HEADER_ALIASES: Record<string, string[]> = {
+  id:        ['ID', 'Id', 'Person ID'],
+  name:      ['Name', 'Person'],
+  type:      ['Record Type', 'Person Type', 'Fellow or Alumni', 'Status'],
+  cohort:    ['Cohort'],
+  areas:     ['Policy Issue Areas', 'Policy Interest Areas', 'Policy Areas'],
+  targets:   ['Target Pathways', 'Target Pathway'],
+  override:  ['Pathway Override', 'Realized Pathway Override', 'Override'],
+  updated:   ['Last Updated', 'Updated', 'Last Updated Date'],
+  notes:     ['Notes', 'Note'],
+};
+
+interface PathwaySheetShape {
+  sheetName: string;
+  rows: string[][];
+  headers: string[];
+  headerRow: number;
+  cols: Record<string, number>;
+}
+
+/** Resolve which of the candidate tab names actually exists, and read it. */
+async function readPathwaySheet(): Promise<PathwaySheetShape | null> {
+  for (const sheetName of PATHWAY_SHEET_NAMES) {
+    const rows = await getSheetValuesSafe(sheetName);
+    if (rows === null) continue;
+
+    // Row 1 is a "do not edit" banner and row 2 the headers, but detect rather
+    // than assume — the tab was created by hand.
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(rows.length, 4); i++) {
+      const cells = (rows[i] || []).map((c) => (c || '').trim().toLowerCase());
+      if (PATHWAY_HEADER_ALIASES.id.some((a) => cells.includes(a.toLowerCase()))) { headerRow = i; break; }
+    }
+    if (headerRow === -1) continue;
+
+    const headers = (rows[headerRow] || []).map((h) => (h || '').trim());
+    const lower = headers.map((h) => h.toLowerCase());
+    const cols: Record<string, number> = {};
+    for (const [field, aliases] of Object.entries(PATHWAY_HEADER_ALIASES)) {
+      cols[field] = aliases.map((a) => lower.indexOf(a.toLowerCase())).find((i) => i >= 0) ?? -1;
+    }
+    return { sheetName, rows, headers, headerRow, cols };
+  }
+  return null;
+}
+
+/**
+ * Coerce a Last Updated cell into YYYY-MM-DD. Accepts the MM/DD/YYYY the sheet
+ * displays and the ISO form the API sometimes returns, so it doesn't matter
+ * which the Sheets API hands back.
+ */
+function normalizeDate(value: string): string {
+  const v = (value || '').trim();
+  if (!v) return '';
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  return v;
+}
+
+/**
+ * Today's date as MM/DD/YYYY in America/New_York.
+ *
+ * Deliberately not UTC: the app runs on a UTC server, so a naive stamp would
+ * date an 8pm edit to tomorrow and rows would appear dated in the future.
+ */
+function todayStampET(): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+export interface PathwayRecordsResult {
+  available: boolean;                      // false = the tab doesn't exist yet
+  records: Record<string, PathwayRecord>;  // keyed by ID, for joining
+  missingColumns: string[];
+  sheetName: string;
+}
+
+/**
+ * Read the whole tab into a lookup by ID. Small enough to fetch wholesale —
+ * one row per person, so hundreds of rows at most.
+ */
+export async function fetchPathwayRecords(): Promise<PathwayRecordsResult> {
+  const shape = await readPathwaySheet();
+  if (!shape) return { available: false, records: {}, missingColumns: [], sheetName: PATHWAY_SHEET_NAMES[0] };
+
+  const missingColumns = Object.entries(shape.cols)
+    .filter(([, i]) => i === -1)
+    .map(([field]) => PATHWAY_HEADER_ALIASES[field][0]);
+
+  const at = (row: string[], field: string) =>
+    (shape.cols[field] >= 0 ? (row[shape.cols[field]] || '') : '').trim();
+
+  const records: Record<string, PathwayRecord> = {};
+  for (const row of shape.rows.slice(shape.headerRow + 1)) {
+    const id = at(row, 'id');
+    if (!id) continue;
+    records[id] = {
+      id,
+      name: at(row, 'name'),
+      record_type: at(row, 'type'),
+      cohort: at(row, 'cohort'),
+      ...cap(parseTags(at(row, 'areas')), parseTags(at(row, 'targets')).map(normalizePathway)),
+      pathway_override: normalizePathway(at(row, 'override')),
+      last_updated: normalizeDate(at(row, 'updated')),
+      notes: at(row, 'notes'),
+    };
+  }
+  return { available: true, records, missingColumns, sheetName: shape.sheetName };
+}
+
+/** Convenience for the single-person case — avoids a second round trip's worth of code. */
+export async function fetchPathwayRecord(id: string): Promise<PathwayRecord | null> {
+  const { records } = await fetchPathwayRecords();
+  return records[id] || null;
+}
+
+export interface SavePathwayResult {
+  ok: boolean;
+  available: boolean;
+  created: boolean;          // true when a new row was appended
+  missingColumns: string[];
+  last_updated: string;
+}
+
+/**
+ * Write one person's tagging. Creates their row if they don't have one yet —
+ * otherwise staff would have to hand-create a row per person before tagging,
+ * which is exactly the busywork this tab is meant to remove.
+ *
+ * `Last Updated` is stamped on every write, so the column stays honest without
+ * anyone remembering to touch it.
+ */
+export async function savePathwayRecord(
+  id: string,
+  data: Partial<Pick<PathwayRecord, 'policy_areas' | 'target_pathways' | 'pathway_override'>>,
+  person?: Partial<Pick<PathwayRecord, 'name' | 'record_type' | 'cohort'>>
+): Promise<SavePathwayResult> {
+  const shape = await readPathwaySheet();
+  if (!shape) {
+    return { ok: false, available: false, created: false, missingColumns: [], last_updated: '' };
+  }
+
+  const stamp = todayStampET();
+  const missingColumns: string[] = [];
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+
+  // Only the fields actually supplied are written, so a partial save can't
+  // blank a column the caller didn't mean to touch.
+  const values: Record<string, string> = { updated: stamp };
+  if (data.policy_areas) values.areas = serializeTags(data.policy_areas);
+  // Renamed labels are migrated on the way out too, so a row rewrites itself to
+  // the current spelling the first time it's saved — the same self-healing the
+  // sector rename has. Without this, only the API route normalises and a direct
+  // save would put a stale label back into the sheet.
+  if (data.target_pathways) values.targets = serializeTags(data.target_pathways.map(normalizePathway));
+  if (data.pathway_override !== undefined) values.override = normalizePathway(data.pathway_override || '');
+
+  const idCol = shape.cols.id;
+  let rowNum = 0;
+  for (let i = shape.headerRow + 1; i < shape.rows.length; i++) {
+    if ((shape.rows[i]?.[idCol] || '').trim() === id) { rowNum = i + 1; break; }
+  }
+
+  if (rowNum) {
+    const data_: { range: string; values: string[][] }[] = [];
+    for (const [field, value] of Object.entries(values)) {
+      const col = shape.cols[field];
+      if (col === -1) { missingColumns.push(PATHWAY_HEADER_ALIASES[field][0]); continue; }
+      data_.push({ range: `${shape.sheetName}!${columnLetter(col)}${rowNum}`, values: [[value]] });
+    }
+    if (data_.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: { valueInputOption: 'USER_ENTERED', data: data_ },
+      });
+    }
+    return { ok: missingColumns.length === 0, available: true, created: false, missingColumns, last_updated: stamp };
+  }
+
+  // No row yet — append one. Identity columns come from the caller, since the
+  // Fellows/Alumni tabs are the source of truth for name, cohort and status.
+  const width = Math.max(shape.headers.length, ...Object.values(shape.cols).map((i) => i + 1));
+  const row = new Array<string>(width).fill('');
+  const put = (field: string, value: string) => {
+    const col = shape.cols[field];
+    if (col === -1) { if (value) missingColumns.push(PATHWAY_HEADER_ALIASES[field][0]); return; }
+    row[col] = value;
+  };
+  put('id', id);
+  put('name', person?.name || '');
+  put('type', person?.record_type || '');
+  put('cohort', person?.cohort || '');
+  put('areas', values.areas || '');
+  put('targets', values.targets || '');
+  put('override', values.override || '');
+  put('updated', stamp);
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: shape.sheetName,
+    valueInputOption: 'USER_ENTERED',
+    // Deliberately NOT insertDataOption: 'INSERT_ROWS' — inserted rows inherit
+    // no validation or formatting, which is what made career-history phases
+    // land as plain text instead of dropdown selections.
+    requestBody: { values: [row] },
+  });
+
+  return { ok: missingColumns.length === 0, available: true, created: true, missingColumns, last_updated: stamp };
 }

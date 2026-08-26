@@ -53,18 +53,33 @@ export function normalizeSector(value: string): string {
   return LEGACY_SECTORS[v] || v;
 }
 
+/**
+ * Pathway tags that have been renamed. Same contract as LEGACY_SECTORS: a value
+ * already in the spreadsheet reads as the current label, so the sheet and the
+ * dropdown can be migrated whenever it's convenient rather than in lockstep
+ * with the code.
+ */
+const LEGACY_PATHWAYS: Record<string, string> = {
+  'Civil Society / Nonprofit': 'Civil Society/Nonprofit',  // spaced form, used until 2026-08-26
+};
+
+export function normalizePathway(value: string): string {
+  const v = (value || '').trim();
+  return LEGACY_PATHWAYS[v] || v;
+}
+
 // ── Policy issue areas (32 tags / 8 categories) ────────────────────────────────────
 
 export const POLICY_AREA_CATEGORIES: { group: string; tags: string[] }[] = [
   { group: 'Technology & Innovation', tags: ['Artificial Intelligence', 'Cybersecurity', 'Data Privacy', 'Telecommunications & Broadband', 'Semiconductor & Supply Chain', 'Quantum Computing', 'Digital Infrastructure', 'Open Source & Software Policy'] },
-  { group: 'Health & Science', tags: ['Digital Health & Wearables', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy', 'Nuclear Policy'] },
+  { group: 'Health & Science', tags: ['Digital Health & Wearables', 'Biotech & Life Sciences', 'Public Health', 'Science Policy & R&D Funding', 'Space Policy'] },
   { group: 'National Security & Defense', tags: ['Defense Technology', 'Intelligence & Surveillance', 'Election Security', 'Critical Infrastructure Protection'] },
   { group: 'Economy & Labor', tags: ['Future of Work & Automation', 'Financial Technology', 'Antitrust & Big Tech Accountability', 'Workforce Development'] },
   // Broad catch-alls have been deliberately pruned ("Climate Technology",
   // "Emerging Technologies"): a tag sitting above its own subsets splits tagging
   // between the general and the specific, so two fellows doing the same work end
   // up tagged differently and never match each other.
-  { group: 'Environment & Energy', tags: ['Clean Energy', 'Energy Grid & Infrastructure'] },
+  { group: 'Environment & Energy', tags: ['Clean Energy', 'Nuclear Energy', 'Energy & Grid Infrastructure'] },
   { group: 'Governance & Democracy', tags: ['Government Innovation', 'Disinformation & Media Policy'] },
   { group: 'Social Policy', tags: ['Education Technology', 'Criminal Justice & Technology', 'Accessibility & Disability Policy', 'Children\'s Safety & Social Media'] },
   { group: 'International', tags: ['Trade & Export Controls', 'International Cyber Policy'] },
@@ -110,7 +125,7 @@ export const PATHWAY_TAGS: PathwayTag[] = [
   { tag: 'Private Sector', definition: 'Industry role — engineering, product, or government affairs at a company.', bg: 'bg-orange-100', text: 'text-orange-800' },
   { tag: 'Academia', definition: 'Faculty, research, or graduate study track.', bg: 'bg-teal-100', text: 'text-teal-800' },
   { tag: 'Elected Office', definition: 'Running for or serving in elected office.', bg: 'bg-rose-100', text: 'text-rose-800' },
-  { tag: 'Civil Society / Nonprofit', definition: 'Advocacy, civic tech, or nonprofit policy role.', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+  { tag: 'Civil Society/Nonprofit', definition: 'Advocacy, civic tech, or nonprofit policy role.', bg: 'bg-emerald-100', text: 'text-emerald-800' },
 ];
 
 export const PATHWAY_NAMES: string[] = PATHWAY_TAGS.map((p) => p.tag);
@@ -136,7 +151,7 @@ const PATHWAY_TO_SECTORS: Record<string, string[]> = {
   'Executive Branch': ['Government: Executive Branch'],
   'Elected Office': ['Government: Congress'],
   'Think Tank': [SECTOR_POLICY],
-  'Civil Society / Nonprofit': [SECTOR_POLICY],
+  'Civil Society/Nonprofit': [SECTOR_POLICY],
   'Private Sector': ['Private'],
   'Academia': ['Academia'],
   'Law School': [],
@@ -163,7 +178,7 @@ function effectiveSector(a: Alumni): string {
   return sector;
 }
 
-export const SCORE_WEIGHTS = { policyArea: 2, exactPathway: 3, sector: 2 };
+export const SCORE_WEIGHTS = { policyArea: 2, exactPathway: 3, sector: 2, priorPathway: 1 };
 
 /**
  * Score one alum against one fellow. Three independent signals, summed:
@@ -173,29 +188,63 @@ export const SCORE_WEIGHTS = { policyArea: 2, exactPathway: 3, sector: 2 };
  *      appears exactly once in the ranked list)
  * Alumni marked "do not contact" are excluded entirely.
  */
+/**
+ * Score one alum against one fellow. Four independent signals, summed:
+ *   +2 per shared policy issue area
+ *   +3 a current pathway is one of the fellow's targets
+ *   +2 sector match (stacks with the pathway match)
+ *   +1 a PAST post-fellowship pathway is one of the targets
+ *
+ * The +1 is partial credit: an alum who spent two years at CISA before moving
+ * to a think tank is still worth meeting for a fellow targeting the executive
+ * branch — just not as much as someone there now. Pre-fellowship history never
+ * counts; it describes who someone was before TechCongress.
+ *
+ * `resolved` carries pathways derived from career history. When omitted the
+ * function falls back to the alum's stored `realized_pathway`, so callers that
+ * haven't been migrated still work.
+ */
 export function matchScore(
   fellowAreas: string[],
   fellowTargets: string[],
-  a: Alumni
+  a: Alumni,
+  resolved?: { pathways?: string[]; priorPathways?: string[] }
 ): Omit<AlumniMatch, 'alumni' | 'reason'> {
   if (a.contact === false) {
-    return { score: -1, overlap: [], pathwayMatch: false, sectorMatch: false };
+    return { score: -1, overlap: [], pathwayMatch: false, sectorMatch: false, priorMatch: false };
   }
+  const targets = fellowTargets || [];
+  const current = resolved?.pathways?.length
+    ? resolved.pathways
+    : (a.realized_pathway ? [a.realized_pathway] : []);
+  const prior = (resolved?.priorPathways || []).filter((p) => !current.includes(p));
+
   const overlap = (fellowAreas || []).filter((t) => (a.policy_areas || []).includes(t));
-  const pathwayMatch = !!a.realized_pathway && (fellowTargets || []).includes(a.realized_pathway);
-  const sectorMatch = !!a.sector && targetSectorsOf(fellowTargets || []).includes(effectiveSector(a));
+  const pathwayMatch = current.some((p) => targets.includes(p));
+  const sectorMatch = !!a.sector && targetSectorsOf(targets).includes(effectiveSector(a));
+  // Only pays out when the current role didn't already match — otherwise an alum
+  // would be paid twice for the same target.
+  const priorMatch = !pathwayMatch && prior.some((p) => targets.includes(p));
+
   const score =
     overlap.length * SCORE_WEIGHTS.policyArea +
     (pathwayMatch ? SCORE_WEIGHTS.exactPathway : 0) +
-    (sectorMatch ? SCORE_WEIGHTS.sector : 0);
-  return { score, overlap, pathwayMatch, sectorMatch };
+    (sectorMatch ? SCORE_WEIGHTS.sector : 0) +
+    (priorMatch ? SCORE_WEIGHTS.priorPathway : 0);
+  return { score, overlap, pathwayMatch, sectorMatch, priorMatch };
 }
 
-function matchReason(m: Omit<AlumniMatch, 'alumni' | 'reason'>, a: Alumni): string {
+function matchReason(
+  m: Omit<AlumniMatch, 'alumni' | 'reason'>,
+  a: Alumni,
+  resolved?: { pathways?: string[]; priorPathways?: string[] }
+): string {
   const bits: string[] = [];
   if (m.overlap.length) bits.push(`shares ${m.overlap.join(' & ')}`);
-  if (m.pathwayMatch) bits.push(`realized pathway: ${a.realized_pathway}`);
+  const current = resolved?.pathways?.length ? resolved.pathways : (a.realized_pathway ? [a.realized_pathway] : []);
+  if (m.pathwayMatch) bits.push(`now in ${current.join(' & ')}`);
   if (m.sectorMatch) bits.push(`same sector: ${a.sector}`);
+  if (m.priorMatch) bits.push(`previously in ${(resolved?.priorPathways || []).join(' & ')}`);
   return bits.join(' · ') || 'shared policy interest';
 }
 
@@ -204,13 +253,21 @@ export function rankAlumni(
   fellowAreas: string[],
   fellowTargets: string[],
   alumni: Alumni[],
-  limit = 4
+  limit = 4,
+  resolve?: (a: Alumni) => { pathways?: string[]; priorPathways?: string[] } | undefined
 ): AlumniMatch[] {
   if (!fellowAreas?.length && !fellowTargets?.length) return [];
   return alumni
     .map((a) => {
-      const m = matchScore(fellowAreas, fellowTargets, a);
-      return { alumni: a, ...m, reason: matchReason(m, a) };
+      const resolved = resolve?.(a);
+      const m = matchScore(fellowAreas, fellowTargets, a, resolved);
+      return {
+        alumni: a,
+        ...m,
+        reason: matchReason(m, a, resolved),
+        pathways: resolved?.pathways,
+        priorPathways: resolved?.priorPathways,
+      };
     })
     .filter((x) => x.score > 0)
     .sort((x, y) => y.score - x.score || x.alumni.name.localeCompare(y.alumni.name))
