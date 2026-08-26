@@ -99,14 +99,44 @@ export interface CareerHistoryEntry {
 
 export type CareerPhase = 'Pre-Fellowship' | 'Fellowship' | 'Post-Fellowship' | 'Current';
 
+/**
+ * One row on the "Career Pathways Engine" tab — a person's tagging record.
+ * Fellows and alumni share this tab; a person keeps the same row when they
+ * graduate, which is what makes "did stated intent predict the outcome?"
+ * answerable later.
+ */
+export interface PathwayRecord {
+  id: string;                    // joins to Fellow.id / Alumni.id
+  name: string;                  // readability only, never used to match
+  record_type: string;           // 'Current Fellow' | 'Alumni'
+  cohort: string;
+  policy_areas: string[];        // up to 3
+  target_pathways: string[];     // up to 2 — what a fellow says they want
+  pathway_override: string;      // usually blank; overrides the derived pathway
+  last_updated: string;          // normalised to YYYY-MM-DD on read
+  notes: string;
+  /**
+   * Fields whose sheet cell held more values than the cap allows. The extras are
+   * ignored rather than deleted — the cell keeps them, scoring doesn't see them —
+   * and the dashboard says so instead of silently disagreeing with the sheet.
+   */
+  over_cap: ('policy_areas' | 'target_pathways')[];
+}
+
 /** A ranked alumni recommendation for a given fellow. */
 export interface AlumniMatch {
   alumni: Alumni;
   score: number;
   overlap: string[];        // shared policy issue areas
-  pathwayMatch: boolean;    // alum's realized pathway is one of the fellow's targets
+  pathwayMatch: boolean;    // a current pathway is one of the fellow's targets
   sectorMatch: boolean;     // alum's (matching-only) sector is a target-pathway sector
+  priorMatch: boolean;      // a PAST post-fellowship pathway is one of the targets
   reason: string;           // human-readable one-liner
+  pathways?: string[];      // derived current pathways
+  priorPathways?: string[]; // derived past post-fellowship pathways
+  provenance?: string;      // "From “OSTP”, matched on “Office of”."
+  overridden?: boolean;     // the pathway came from the Pathway Override column
+  priorRoles?: { title: string; org: string; pathway: string; range: string }[];
 }
 
 export interface TCEvent {

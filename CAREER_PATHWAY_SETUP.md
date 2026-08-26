@@ -126,7 +126,6 @@ Biotech & Life Sciences
 Public Health
 Science Policy & R&D Funding
 Space Policy
-Nuclear Policy
 Defense Technology
 Intelligence & Surveillance
 Election Security
@@ -136,7 +135,8 @@ Financial Technology
 Antitrust & Big Tech Accountability
 Workforce Development
 Clean Energy
-Energy Grid & Infrastructure
+Nuclear Energy
+Energy & Grid Infrastructure
 Government Innovation
 Disinformation & Media Policy
 Education Technology
@@ -160,8 +160,28 @@ Law School
 Private Sector
 Academia
 Elected Office
-Civil Society / Nonprofit
+Civil Society/Nonprofit
 ```
+
+### Multi-select and the caps
+
+Both `Policy Issue Areas` and `Target Pathways` are multi-select dropdowns.
+Google writes multiple picks into the cell as `Think Tank, Private Sector` —
+comma-separated — which is exactly the format the dashboard reads and writes, so
+nothing needs converting.
+
+Google's multi-select has no maximum of its own, so it will let you pick more
+than the dashboard uses: **3 policy issue areas** and **2 target pathways**.
+
+If a cell goes over, the extras are ignored, not deleted. The sheet keeps every
+value you picked, the dashboard uses the first 3 (or 2) in cell order, and the
+person's Career Pathway tab shows an amber line saying so. Trim the cell and the
+line disappears.
+
+The cap on targets is deliberate. The +3 bonus for an alum matching a fellow's
+target pathway is what separates a good recommendation from a generic one — if a
+fellow targets five of the eight pathways, nearly every alum earns it and the
+ranking flattens out. Two forces the question of what the fellow actually wants.
 
 ---
 
@@ -184,6 +204,17 @@ the existing `Currently on the Hill?` flag, so a fellow targeting "Stay in
 Congress" and one targeting "Executive Branch" get different recommendations.
 **This split never surfaces in the UI** — badges, filters, and the By Sector pie
 chart all keep the single "Government" bucket.
+
+## Renaming the pathway tag: `Civil Society / Nonprofit` → `Civil Society/Nonprofit`
+
+The spaces around the slash are gone, matching how the sector labels are
+written. Same back-compat contract as the sector rename below: the spaced form
+is mapped to the new one on read, and a row rewrites itself to the new spelling
+whenever it's saved. Nothing breaks while the sheet still says the old thing.
+
+To finish it whenever convenient: add `Civil Society/Nonprofit` to the
+`Target Pathways` and `Pathway Override` dropdown lists *first*, then find and
+replace on those two columns, then drop the old value from the lists.
 
 ## Renaming the sector: `Policy/Think Tank` → `Policy/Think Tank/Nonprofit`
 

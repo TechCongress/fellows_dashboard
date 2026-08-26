@@ -41,15 +41,6 @@ function ChipRow({ tags, kind, empty }: { tags: string[]; kind: 'policy' | 'path
   );
 }
 
-export function SetupNote({ tab, column }: { tab: string; column: string }) {
-  return (
-    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
-      Add a column named <strong>{column}</strong> to the <strong>{tab}</strong> tab of the spreadsheet to turn this on.
-      Until then it stays read-only and empty.
-    </p>
-  );
-}
-
 // ── Pickers ──────────────────────────────────────────────────────────────────
 
 function PolicyAreaPicker({
@@ -122,7 +113,6 @@ function TagBlock({
   kind,
   empty,
   editable,
-  disabledNote,
   onSave,
   max,
   singleSelect,
@@ -133,7 +123,6 @@ function TagBlock({
   kind: 'policy' | 'pathway';
   empty: string;
   editable: boolean;
-  disabledNote?: React.ReactNode;
   onSave: (next: string[]) => Promise<string | null>;  // resolves to an error message, or null
   max: number;
   singleSelect?: boolean;
@@ -176,8 +165,6 @@ function TagBlock({
         )}
       </div>
 
-      {!editable && disabledNote}
-
       {!editing ? (
         <ChipRow tags={tags} kind={kind} empty={empty} />
       ) : (
@@ -209,6 +196,7 @@ function MatchCard({ fellow, match, senderName }: { fellow: Fellow; match: Alumn
   const [copied, setCopied] = useState(false);
   const a = match.alumni;
   const draft = introDraft(fellow, a, match.overlap, senderName);
+  const current = match.pathways || (a.realized_pathway ? [a.realized_pathway] : []);
 
   async function copy() {
     try {
@@ -228,15 +216,42 @@ function MatchCard({ fellow, match, senderName }: { fellow: Fellow; match: Alumn
           <p className="text-xs text-gray-500">{a.current_role || '—'}</p>
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          {a.realized_pathway && <PathwayChip tag={a.realized_pathway} />}
+          {current.map((p) => <PathwayChip key={p} tag={p} />)}
           <span className="text-[11px] text-gray-400 tabular-nums">match score {match.score}</span>
         </div>
       </div>
+
+      {/* Where the pathway came from. A wrong derivation you can see is a quick
+          fix; a wrong one you can't is silently bad matching. */}
+      {match.provenance && (
+        <p className="text-[11px] text-gray-400 leading-relaxed">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${match.overridden ? 'bg-amber-500' : 'bg-blue-500'}`} />
+          {match.overridden ? 'Pathway set by staff.' : match.provenance}
+        </p>
+      )}
+
       {a.policy_areas.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {a.policy_areas.map((t) => <PolicyAreaChip key={t} tag={t} />)}
         </div>
       )}
+
+      {/* Past post-fellowship roles that match a target the current role doesn't.
+          This is what the +1 partial credit is paying for, so it's named. */}
+      {match.priorRoles && match.priorRoles.length > 0 && (
+        <div className="text-xs text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-2">
+          <span className="font-semibold text-gray-700">Prior roles include</span>{' '}
+          {match.priorRoles.map((r, i) => (
+            <span key={`${r.org}-${i}`}>
+              {i > 0 && '; '}
+              {r.title}{r.org ? ` at ${r.org}` : ''}
+              {r.range ? ` (${r.range})` : ''}
+              <span className="text-gray-400"> — {r.pathway}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       <p className="text-xs text-gray-500">Match: {match.reason}</p>
       <div className="flex flex-wrap gap-2 pt-0.5">
         <button onClick={() => setOpen((o) => !o)}
@@ -265,22 +280,70 @@ function MatchCard({ fellow, match, senderName }: { fellow: Fellow; match: Alumn
   );
 }
 
+// ── Shared setup notice ──────────────────────────────────────────────────────
+
+interface PathwaySetup {
+  pathwayTab: boolean;
+  careerHistoryTab?: boolean;
+  missingColumns: string[];
+  sheetName: string;
+}
+
+function SetupNotice({ setup }: { setup: PathwaySetup }) {
+  if (!setup.pathwayTab) {
+    return (
+      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+        No <strong>{setup.sheetName}</strong> tab found in the spreadsheet. Add a tab with that exact name and the
+        columns <em>ID, Name, Record Type, Cohort, Policy Issue Areas, Target Pathways, Pathway Override,
+        Last Updated, Notes</em> to turn tagging on.
+      </p>
+    );
+  }
+  if (setup.missingColumns.length > 0) {
+    return (
+      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+        Missing column{setup.missingColumns.length > 1 ? 's' : ''} on <strong>{setup.sheetName}</strong>:{' '}
+        <strong>{setup.missingColumns.join(', ')}</strong>. Add {setup.missingColumns.length > 1 ? 'them' : 'it'} to
+        enable everything here.
+      </p>
+    );
+  }
+  return null;
+}
+
+/**
+ * The sheet's multi-select dropdowns have no maximum of their own, so someone
+ * can pick more than the cap. Saying which ones count beats letting the sheet
+ * and the dashboard quietly disagree.
+ */
+function OverCapNotice({ fields }: { fields?: ('policy_areas' | 'target_pathways')[] }) {
+  if (!fields || fields.length === 0) return null;
+  const label = (f: string) =>
+    f === 'policy_areas'
+      ? `the first ${MAX_POLICY_AREAS} policy issue areas`
+      : `the first ${MAX_TARGET_PATHWAYS} target pathways`;
+  return (
+    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+      The sheet has more values selected than this dashboard uses. Only{' '}
+      {fields.map(label).join(' and ')} count toward matching — the rest stay in the
+      cell, untouched.
+    </p>
+  );
+}
+
 // ── Fellow pathway tab ───────────────────────────────────────────────────────
 
 interface PathwayResponse {
   policy_areas: string[];
   target_pathways: string[];
   tagged: boolean;
+  last_updated: string;
+  over_cap?: ('policy_areas' | 'target_pathways')[];
   alumni_total: number;
   alumni_tagged: number;
+  alumni_with_history: number;
   matches: AlumniMatch[];
-  setup: {
-    fellowsPolicyAreas: boolean;
-    fellowsTargetPathways: boolean;
-    alumniPolicyAreas: boolean;
-    alumniRealizedPathway: boolean;
-    careerHistoryTab: boolean;
-  };
+  setup: PathwaySetup;
 }
 
 export function FellowPathwayTab({
@@ -321,7 +384,7 @@ export function FellowPathwayTab({
         const res = await fetch('/api/pathway', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'fellow', id: fellow.id, policy_areas: nextAreas, target_pathways: nextTargets }),
+          body: JSON.stringify({ id: fellow.id, policy_areas: nextAreas, target_pathways: nextTargets }),
         });
         const json = await res.json();
         if (!res.ok) return json.error || 'Failed to save.';
@@ -342,12 +405,12 @@ export function FellowPathwayTab({
   }
 
   const setup = data?.setup;
-  const canEditAreas = setup ? setup.fellowsPolicyAreas : false;
-  const canEditTargets = setup ? setup.fellowsTargetPathways : false;
+  const canEdit = !!setup?.pathwayTab && setup.missingColumns.length === 0;
 
   return (
     <div className="space-y-6">
       {loadError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{loadError}</p>}
+      {setup && <SetupNotice setup={setup} />}
 
       <TagBlock
         title="Policy Issue Areas"
@@ -355,8 +418,7 @@ export function FellowPathwayTab({
         tags={areas}
         kind="policy"
         empty="Not tagged yet. These are typically captured shortly after a fellow settles into their office."
-        editable={canEditAreas}
-        disabledNote={setup && !canEditAreas ? <div className="mb-2"><SetupNote tab="Fellows" column="Policy Issue Areas" /></div> : null}
+        editable={canEdit}
         max={MAX_POLICY_AREAS}
         onSave={(next) => savePathway(next, targets)}
       />
@@ -367,11 +429,16 @@ export function FellowPathwayTab({
         tags={targets}
         kind="pathway"
         empty="No target pathways recorded yet."
-        editable={canEditTargets}
-        disabledNote={setup && !canEditTargets ? <div className="mb-2"><SetupNote tab="Fellows" column="Target Pathways" /></div> : null}
+        editable={canEdit}
         max={MAX_TARGET_PATHWAYS}
         onSave={(next) => savePathway(areas, next)}
       />
+
+      <OverCapNotice fields={data?.over_cap} />
+
+      {data?.last_updated && (
+        <p className="text-[11px] text-gray-400 -mt-4">Tagging last updated {data.last_updated}</p>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -389,8 +456,8 @@ export function FellowPathwayTab({
 
         {!loading && data && data.tagged && data.matches.length === 0 && (
           <p className="text-sm text-gray-400">
-            No strong matches yet. {data.alumni_tagged} of {data.alumni_total} alumni are tagged — matching improves as more
-            alumni get policy areas and a realized pathway.
+            No strong matches yet. {data.alumni_tagged} of {data.alumni_total} alumni are tagged and{' '}
+            {data.alumni_with_history} have career history — matching improves as both grow.
           </p>
         )}
 
@@ -398,8 +465,9 @@ export function FellowPathwayTab({
           <div className="space-y-2.5">
             {data.matches.map((m) => <MatchCard key={m.alumni.id} fellow={fellow} match={m} senderName={senderName} />)}
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              Scored on shared policy areas (+2 each), an exact realized-pathway match (+3), and a sector match (+2).
-              Alumni marked &ldquo;do not contact&rdquo; are excluded.
+              Scored on shared policy areas (+2 each), a current pathway matching a target (+3), a sector match (+2),
+              and a past post-fellowship pathway matching a target (+1). Alumni marked &ldquo;do not contact&rdquo; are
+              excluded. Pathways are read from each alum&rsquo;s career history.
             </p>
           </div>
         )}
@@ -410,6 +478,25 @@ export function FellowPathwayTab({
 
 // ── Alumni pathway tab ───────────────────────────────────────────────────────
 
+interface AlumniPathwayResponse {
+  setup: PathwaySetup;
+  record: {
+    policy_areas: string[];
+    pathway_override: string;
+    last_updated: string;
+    over_cap?: ('policy_areas' | 'target_pathways')[];
+  } | null;
+  careerHistoryAvailable: boolean;
+  derivation: {
+    pathways: string[];
+    priorPathways: string[];
+    overridden: boolean;
+    explanation: string;
+    wouldHaveBeen: { pathway: string; why: string } | null;
+    prior: { pathway: string; title: string; org: string }[];
+  } | null;
+}
+
 export function AlumniPathwayTab({
   alumni,
   onAlumniUpdate,
@@ -417,70 +504,143 @@ export function AlumniPathwayTab({
   alumni: Alumni;
   onAlumniUpdate?: (updated: Alumni) => void;
 }) {
+  const [data, setData] = useState<AlumniPathwayResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [areas, setAreas] = useState<string[]>(alumni.policy_areas || []);
-  const [realized, setRealized] = useState<string>(alumni.realized_pathway || '');
-  const [setup, setSetup] = useState<PathwayResponse['setup'] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/pathway')
-      .then((r) => r.json())
-      .then((s) => { if (!cancelled) setSetup(s); })
-      .catch(() => { /* leave editing disabled */ });
-    return () => { cancelled = true; };
-  }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/pathway?id=${encodeURIComponent(alumni.id)}`);
+      const json: AlumniPathwayResponse = await res.json();
+      setData(json);
+      if (json.record) setAreas(json.record.policy_areas || []);
+    } catch {
+      /* leave editing disabled */
+    }
+    setLoading(false);
+  }, [alumni.id]);
+
+  useEffect(() => { load(); }, [load]);
 
   const save = useCallback(
-    async (nextAreas: string[], nextRealized: string): Promise<string | null> => {
+    async (patch: { policy_areas?: string[]; pathway_override?: string }): Promise<string | null> => {
       try {
         const res = await fetch('/api/pathway', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'alumni', id: alumni.id, policy_areas: nextAreas, realized_pathway: nextRealized }),
+          body: JSON.stringify({ id: alumni.id, ...patch }),
         });
         const json = await res.json();
         if (!res.ok) return json.error || 'Failed to save.';
-        setAreas(nextAreas);
-        setRealized(nextRealized);
-        onAlumniUpdate?.({ ...alumni, policy_areas: nextAreas, realized_pathway: nextRealized });
+        if (patch.policy_areas) {
+          setAreas(patch.policy_areas);
+          onAlumniUpdate?.({ ...alumni, policy_areas: patch.policy_areas });
+        }
+        load();
         return null;
       } catch {
         return 'Network error. Please try again.';
       }
     },
-    [alumni, onAlumniUpdate]
+    [alumni, onAlumniUpdate, load]
   );
+
+  const setup = data?.setup;
+  const canEdit = !!setup?.pathwayTab && setup.missingColumns.length === 0;
+  const d = data?.derivation;
 
   return (
     <div className="space-y-6">
+      {setup && <SetupNotice setup={setup} />}
+
       <TagBlock
         title="Policy Issue Areas"
         hint={`up to ${MAX_POLICY_AREAS}`}
         tags={areas}
         kind="policy"
         empty="Not tagged yet. Tagging alumni is what makes fellow↔alumni matching work."
-        editable={!!setup?.alumniPolicyAreas}
-        disabledNote={setup && !setup.alumniPolicyAreas ? <div className="mb-2"><SetupNote tab="Alumni" column="Policy Issue Areas" /></div> : null}
+        editable={canEdit}
         max={MAX_POLICY_AREAS}
-        onSave={(next) => save(next, realized)}
+        onSave={(next) => save({ policy_areas: next })}
       />
+
+      {/* Realized pathway is DERIVED, never stored — it can't go stale, because
+          it's read from the career history that's already kept current. */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Realized Pathway</h3>
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
+            d?.overridden ? 'text-amber-700 border-amber-200 bg-amber-50' : 'text-gray-400 border-gray-200'}`}>
+            {d?.overridden ? 'override' : 'derived'}
+          </span>
+        </div>
+
+        {loading && <p className="text-sm text-gray-400">Reading career history…</p>}
+
+        {!loading && d && d.pathways.length > 0 && (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {d.pathways.map((p) => <PathwayChip key={p} tag={p} />)}
+            </div>
+            <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+              {d.overridden
+                ? <>Set by staff.{d.wouldHaveBeen?.pathway ? <> Would have derived <strong>{d.wouldHaveBeen.pathway}</strong> — {d.wouldHaveBeen.why}</> : ' Nothing would have derived automatically.'}</>
+                : d.explanation}
+            </p>
+          </>
+        )}
+
+        {!loading && d && d.pathways.length === 0 && (
+          <p className="text-sm text-gray-400">
+            No pathway could be read from their career history. Add a role marked <em>Current</em> on the
+            Background &amp; Career History tab, or set an override below.
+          </p>
+        )}
+
+        {!loading && !d && (
+          <p className="text-sm text-gray-400">
+            Pathways are derived for alumni only. This person is recorded as a current fellow.
+          </p>
+        )}
+      </div>
+
+      {!loading && d && d.prior.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Also held since the fellowship</h3>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {d.priorPathways.map((p) => <PathwayChip key={p} tag={p} />)}
+          </div>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            {d.prior.map((p, i) => (
+              <span key={`${p.org}-${i}`}>{i > 0 && '; '}{p.title}{p.org ? ` at ${p.org}` : ''} — {p.pathway}</span>
+            ))}
+            . These earn partial credit when a fellow targets one of them.
+          </p>
+        </div>
+      )}
 
       <TagBlock
-        title="Realized Pathway"
-        hint="pick one"
-        tags={realized ? [realized] : []}
+        title="Pathway Override"
+        hint="usually blank"
+        tags={data?.record?.pathway_override ? [data.record.pathway_override] : []}
         kind="pathway"
-        empty="No realized pathway recorded yet."
-        editable={!!setup?.alumniRealizedPathway}
-        disabledNote={setup && !setup.alumniRealizedPathway ? <div className="mb-2"><SetupNote tab="Alumni" column="Realized Pathway" /></div> : null}
+        empty="Blank — the pathway above is read from their career history. Set this only to correct a wrong derivation."
+        editable={canEdit}
         max={1}
         singleSelect
-        onSave={(next) => save(areas, next[0] || '')}
+        onSave={(next) => save({ pathway_override: next[0] || '' })}
       />
 
+      <OverCapNotice fields={data?.record?.over_cap} />
+
+      {data?.record?.last_updated && (
+        <p className="text-[11px] text-gray-400 -mt-4">Tagging last updated {data.record.last_updated}</p>
+      )}
+
       <p className="text-[11px] text-gray-400 leading-relaxed">
-        These tags feed the alumni recommendations on each current fellow&rsquo;s Career Pathway tab. The more alumni are
-        tagged, the better those recommendations get.
+        These tags feed the alumni recommendations on each current fellow&rsquo;s Career Pathway tab. The more alumni
+        are tagged — and the more complete their career history — the better those recommendations get.
       </p>
     </div>
   );
