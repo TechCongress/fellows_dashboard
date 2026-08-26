@@ -14,8 +14,8 @@ request time, so **no redeploy is needed** after you edit the sheet.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 32 tags in §4 |
-| `Target Pathways` | Multi-select dropdown (chips) | 2 | The 8 tags in §5 |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 33 tags in §4 |
+| `Target Pathways` | Multi-select dropdown (chips) | 2 | The 9 tags in §5 |
 
 Turns on: the tag editors on each fellow's **Career Pathway** tab, and their
 half of the alumni matching.
@@ -24,8 +24,8 @@ half of the alumni matching.
 
 | Header (exact text) | Type | Cap | Source list |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 32 tags — must be the identical list as the Fellows tab |
-| `Realized Pathway` | Single-select dropdown | 1 | The 8 tags in §5 |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 33 tags — must be the identical list as the Fellows tab |
+| `Realized Pathway` | Single-select dropdown | 1 | The 9 tags in §5 |
 
 Turns on: the tag editors on each alum's **Career Pathway** tab, and the other
 half of matching. No changes needed to `Sector`, `Currently on the Hill?`, or
@@ -105,7 +105,7 @@ before the Fellowship row.
 
 ---
 
-## 4. Policy Issue Areas — the 32-tag source list
+## 4. Policy Issue Areas — the 33-tag source list
 
 Paste this column into a hidden source range and point both multi-select
 dropdowns at it. **This list is completely separate from the Accomplishments
@@ -143,6 +143,7 @@ Education Technology
 Criminal Justice & Technology
 Accessibility & Disability Policy
 Children's Safety & Social Media
+US-China Tech Competition
 Trade & Export Controls
 International Cyber Policy
 ```
@@ -150,7 +151,30 @@ International Cyber Policy
 The API rejects anything not on this list, so a typo in the sheet reads as
 "untagged" rather than silently adding a new one.
 
-## 5. Pathway tags — the 8-tag source list
+### Where `US-China Tech Competition` stops
+
+Added 2026-08-26, partly to fill the gap left by retiring `Tech Diplomacy`. Note
+the exact spelling: **no periods in "US", a plain hyphen, not an en dash.** The
+dropdown has to match it character for character or the API reads the cell as
+untagged.
+
+It sits next to three tags it could easily swallow, so the boundary matters:
+
+- Use it when **the strategic contest is the subject** — AI and chip
+  competition with China, standards-setting bodies, research security, talent
+  flows, allied coordination, and where the U.S. stands relative to Beijing.
+- Use **`Artificial Intelligence`** for how AI is governed, regulated, or
+  deployed — safety, liability, procurement, model policy.
+- Use **`Semiconductor & Supply Chain`** for chips as an industrial and supply
+  question in their own right.
+- Use **`Trade & Export Controls`** for the trade instruments themselves, even
+  when China is the target.
+
+Rule of thumb: if the sentence is about *the rivalry*, it's this tag. If it's
+about *the technology or the instrument*, it's one of the others. Tagging two is
+fine when the work genuinely spans them — the cap is 3.
+
+## 5. Pathway tags — the 9-tag source list
 
 ```
 Stay in Congress
@@ -161,7 +185,32 @@ Private Sector
 Academia
 Elected Office
 Civil Society/Nonprofit
+State & Local Government
 ```
+
+### `State & Local Government` vs `Elected Office`
+
+Added 2026-08-26. The line between them is **holding the seat versus working
+around it**:
+
+- **`Elected Office`** — anyone who holds or is running for office, at any
+  level. A state senator, a mayor, a city councilmember all belong here, not
+  under the new tag.
+- **`State & Local Government`** — the non-elected roles: a state agency, a
+  governor's or mayor's office, city or county government, or legislative staff
+  in a statehouse.
+
+The derivation engine follows the same rule. It checks the job title for an
+elected office first, so "State Senator" reads as `Elected Office` even though
+the organisation is a state senate.
+
+One thing this tag does **not** do: earn the +2 sector bonus in matching. The
+Sector column has no state/local value — a city employee is recorded as
+`Government`, which the scoring logic reads as federal executive branch because
+they aren't on the Hill. Awarding the bonus would hand +2 to every federal
+agency alum for a fellow aiming at city hall. An exact pathway match still
+scores +3, which is the signal that means something. `Law School` is deliberately
+the same.
 
 ### Multi-select and the caps
 

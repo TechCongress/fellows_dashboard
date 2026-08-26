@@ -33,6 +33,38 @@ const ELECTED_TITLE = [
 ];
 
 /**
+ * State, city, and county government. Checked BEFORE the congressional and
+ * executive patterns, because almost every marker of sub-national government
+ * collides with a federal one: "California State Senate" contains "Senate",
+ * "Office of the Governor" contains "Office of", and "NYC Tech Transition
+ * Committee" contains "Committee". Federal wins those words only after this
+ * list has had its say.
+ *
+ * Elected office is NOT here. A state senator holds office rather than works
+ * for one, and ELECTED_TITLE catches them one rung earlier — this list is for
+ * the staff, agency, and appointed roles around them.
+ */
+const STATE_LOCAL_ORG = [
+  // Legislatures. "State Senate"/"State Assembly" can't be federal.
+  /\bstate (senate|assembly|house|legislature|capitol)\b/i,
+  /\bgeneral assembly\b/i, /\bstate legislature\b/i,
+  // Executives.
+  /\b(office of the |)governor'?s? office\b/i, /\boffice of the governor\b/i,
+  /\blieutenant governor\b/i,
+  /\b(office of the |)mayor'?s? office\b/i, /\boffice of the mayor\b/i,
+  // Whole-jurisdiction phrasing.
+  /\bstate of (?!the union\b)[a-z]/i, /\bcommonwealth of\b/i,
+  /\bcity of\b/i, /\bcounty of\b/i,
+  /\b(city|county|municipal|township|borough) (council|government|hall|attorney|clerk)\b/i,
+  /\bnew york city\b/i, /\bnyc\b/i,
+  /\bschool district\b/i, /\bboard of education\b/i,
+  // A named state next to a government word. This is what catches the common
+  // real-world form, e.g. "Washington State Department of Transportation",
+  // which would otherwise read as a federal department.
+  new RegExp(String.raw`\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|puerto rico|district of columbia)\s+(state\s+)?(department|dept\.?|agency|office|commission|board|authority|division|bureau)\b`, 'i'),
+];
+
+/**
  * Legislative branch. Checked BEFORE the executive patterns because
  * "Office of Senator Peters" contains both "Office of" and "Senator" — the
  * congressional signal has to win.
@@ -150,6 +182,10 @@ export function derivePathwayFromRole(role: {
   if (student) return { pathway: 'Law School', source: 'title', matchedOn: student, role: at };
 
   if (sector === 'Government') {
+    // Sub-national first — see the note on STATE_LOCAL_ORG. Almost every state
+    // or city marker also matches a federal pattern.
+    const local = firstMatch(STATE_LOCAL_ORG, org) || firstMatch(STATE_LOCAL_ORG, title);
+    if (local) return { pathway: 'State & Local Government', source: 'organization', matchedOn: local, role: at };
     const congress = firstMatch(CONGRESS_ORG, org) || firstMatch(CONGRESS_ORG, title);
     if (congress) return { pathway: 'Stay in Congress', source: 'organization', matchedOn: congress, role: at };
     const exec = firstMatch(EXECUTIVE_ORG, org) || firstMatch(EXECUTIVE_ORG, title);
