@@ -418,6 +418,56 @@ export async function fetchStatusReports(fellowId?: string): Promise<StatusRepor
   return fellowId ? reports.filter((r) => r.fellow_id === fellowId) : reports;
 }
 
+/**
+ * Remove a logged status report. Keyed on fellow + month, the same pair
+ * logStatusReport treats as unique, so there is never more than one row to
+ * remove and no ambiguity about which.
+ *
+ * This exists because the sync files a submission under the month it arrived
+ * in. A report handed in on 8/16 that was really July's lands as an on-time
+ * August report, and re-logging can correct August but can't remove a month
+ * that should never have been recorded at all.
+ *
+ * Returns false when there's nothing to remove, so the caller can say so
+ * rather than reporting a success that didn't happen.
+ */
+export async function deleteStatusReport(fellowId: string, month: string): Promise<boolean> {
+  const id = (fellowId || '').trim();
+  const m = (month || '').trim();
+  if (!id || !m) return false;
+
+  const rows = await getSheetValues('Status Reports');
+  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data.
+  // Column B (index 1) is Fellow ID, column D (index 3) is Month.
+  let rowNum = 0;
+  for (let i = 2; i < rows.length; i++) {
+    if ((rows[i]?.[1] || '').trim() === id && (rows[i]?.[3] || '').trim() === m) {
+      rowNum = i + 1;
+      break;
+    }
+  }
+  if (!rowNum) return false;
+
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const tab = meta.data.sheets?.find((sh) => sh.properties?.title === 'Status Reports');
+  const sheetId = tab?.properties?.sheetId;
+  if (sheetId == null) return false;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId, dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      }],
+    },
+  });
+  return true;
+}
+
 export async function logStatusReport(data: {
   fellow_id: string;
   fellow_name: string;

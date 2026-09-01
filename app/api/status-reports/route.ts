@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchStatusReports, logStatusReport } from '@/lib/sheets';
+import { fetchStatusReports, logStatusReport, deleteStatusReport } from '@/lib/sheets';
 import { getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
 import { cookies } from 'next/headers';
 import { Resend } from 'resend';
@@ -66,5 +66,39 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to log status report:', err);
     return NextResponse.json({ error: 'Failed to save report' }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/status-reports
+ * Body: { fellow_id, month }
+ *
+ * Removes one logged report. The sync files a submission under the month it
+ * arrived in, so a late report for a previous month lands under the wrong one —
+ * re-logging can correct a month, but only removal clears a month that should
+ * never have been recorded.
+ */
+export async function DELETE(req: NextRequest) {
+  const cookieStore = await cookies();
+  const auth = cookieStore.get('tc-auth');
+  if (!auth || auth.value !== 'authenticated') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  try {
+    const { fellow_id, month } = await req.json();
+    if (!fellow_id || !month) {
+      return NextResponse.json({ error: 'fellow_id and month are required' }, { status: 400 });
+    }
+    const removed = await deleteStatusReport(fellow_id, month);
+    if (!removed) {
+      return NextResponse.json(
+        { error: 'No logged report found for that month — nothing was removed.' },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to remove status report:', err);
+    return NextResponse.json({ error: 'Failed to remove the report. Please try again.' }, { status: 500 });
   }
 }

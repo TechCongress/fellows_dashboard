@@ -193,6 +193,36 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
   const [logReportForm, setLogReportForm] = useState({ month: '', late: false, date_submitted: todayStr, notes: '' });
   const [logReportSaving, setLogReportSaving] = useState(false);
   const [logReportError, setLogReportError] = useState('');
+  // Which month's log is awaiting a confirm click, and any failure to show.
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [removingMonth, setRemovingMonth] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState('');
+
+  // Removing a logged report. Two clicks, because there is no undo — the row is
+  // deleted from the sheet — and the streak recalculates from what's left.
+  async function removeReport(month: string) {
+    setRemovingMonth(month);
+    setRemoveError('');
+    try {
+      const res = await fetch('/api/status-reports', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fellow_id: fellow.id, month }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setRemoveError(json.error || 'Could not remove the log. Please try again.');
+        return;
+      }
+      const updated = await fetch(`/api/status-reports?fellowId=${fellow.id}`).then((r) => r.json());
+      setReports(Array.isArray(updated) ? updated : []);
+      setConfirmRemove(null);
+    } catch {
+      setRemoveError('Network error — nothing was removed.');
+    } finally {
+      setRemovingMonth(null);
+    }
+  }
 
   // Onboarding state — auto-mark all complete if the fellow has already started
   const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
@@ -564,16 +594,54 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
                       const overdue = !report && isPast;
                       const graceEndStr = graceEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
+                      // Shared by the two "a report exists" rows: either the
+                      // Remove link, or the confirm prompt once it's clicked.
+                      const removeControl = (
+                        confirmRemove === month ? (
+                          <span className="ml-auto flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs text-gray-500">Remove this log?</span>
+                            <button
+                              onClick={() => removeReport(month)}
+                              disabled={removingMonth === month}
+                              className="text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-50">
+                              {removingMonth === month ? 'Removing…' : 'Remove'}
+                            </button>
+                            <button
+                              onClick={() => { setConfirmRemove(null); setRemoveError(''); }}
+                              className="text-xs text-gray-500 hover:text-gray-900">Cancel</button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => { setConfirmRemove(month); setRemoveError(''); }}
+                            title="Remove this logged report"
+                            className="ml-auto flex-shrink-0 text-xs text-gray-400 hover:text-red-700 transition-colors">
+                            Remove
+                          </button>
+                        )
+                      );
+
                       if (report?.late) return (
-                        <div key={month} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-yellow-50 border-l-4 border-yellow-500">
-                          <span className="text-yellow-800 font-semibold text-sm">⏰ {month}</span>
-                          <span className="text-yellow-700 text-sm">Submitted late on {report.date_submitted} — does not count toward streak</span>
+                        <div key={month}>
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-yellow-50 border-l-4 border-yellow-500">
+                            <span className="text-yellow-800 font-semibold text-sm">⏰ {month}</span>
+                            <span className="text-yellow-700 text-sm">Submitted late on {report.date_submitted} — does not count toward streak</span>
+                            {removeControl}
+                          </div>
+                          {confirmRemove === month && removeError && (
+                            <p className="text-xs text-red-700 mt-1 px-3">{removeError}</p>
+                          )}
                         </div>
                       );
                       if (report) return (
-                        <div key={month} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-green-50 border-l-4 border-green-500">
-                          <span className="text-green-800 font-semibold text-sm">✅ {month}</span>
-                          <span className="text-gray-500 text-sm">Submitted {report.date_submitted}</span>
+                        <div key={month}>
+                          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-green-50 border-l-4 border-green-500">
+                            <span className="text-green-800 font-semibold text-sm">✅ {month}</span>
+                            <span className="text-gray-500 text-sm">Submitted {report.date_submitted}</span>
+                            {removeControl}
+                          </div>
+                          {confirmRemove === month && removeError && (
+                            <p className="text-xs text-red-700 mt-1 px-3">{removeError}</p>
+                          )}
                         </div>
                       );
                       if (overdue && inGracePeriod) return (
