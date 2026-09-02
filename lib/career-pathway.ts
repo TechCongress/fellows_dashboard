@@ -136,6 +136,83 @@ export function pathwayColors(tag: string): { bg: string; text: string } {
   return p ? { bg: p.bg, text: p.text } : { bg: 'bg-gray-100', text: 'text-gray-700' };
 }
 
+// ── Prior roles, grouped for display ─────────────────────────────────────────
+
+/**
+ * Below this many prior roles the list renders open, with no disclosure at all.
+ * Hiding one or two lines behind a click costs more attention than it saves.
+ */
+export const PRIOR_ROLES_COLLAPSE_AT = 3;
+
+export interface PriorRole { pathway: string; title: string; org: string }
+
+export interface PriorRoleGroup {
+  pathway: string;
+  count: number;
+  /** Roles at the same employer, in the order they were derived. */
+  orgs: { org: string; titles: string[] }[];
+}
+
+/**
+ * Reshape the flat prior-role list for display: grouped by pathway, and by
+ * employer within each pathway.
+ *
+ * The section answers one question — which pathways has this person held? —
+ * because that's what earns partial credit. So pathways lead and roles are the
+ * evidence. Grouping by employer as well matches what the career timeline
+ * already does: three CISA roles are one employer, not three.
+ *
+ * Pathways are ordered by how many roles back them, strongest signal first,
+ * with ties broken by first appearance so the order is stable rather than
+ * alphabetical-by-accident.
+ */
+export function groupPriorRoles(prior: PriorRole[]): PriorRoleGroup[] {
+  const order: string[] = [];
+  const byPathway = new Map<string, PriorRole[]>();
+
+  for (const role of prior) {
+    const key = (role.pathway || '').trim();
+    if (!key) continue;                      // no pathway, nothing to credit
+    if (!byPathway.has(key)) { byPathway.set(key, []); order.push(key); }
+    byPathway.get(key)!.push(role);
+  }
+
+  return order
+    .map((pathway) => {
+      const roles = byPathway.get(pathway)!;
+      const orgOrder: string[] = [];
+      const byOrg = new Map<string, string[]>();
+      for (const r of roles) {
+        // An empty organisation still deserves a row — the title is the only
+        // thing known about it, and dropping it would undercount the pathway.
+        const org = (r.org || '').trim();
+        if (!byOrg.has(org)) { byOrg.set(org, []); orgOrder.push(org); }
+        const title = (r.title || '').trim();
+        if (title) byOrg.get(org)!.push(title);
+      }
+      return {
+        pathway,
+        count: roles.length,
+        orgs: orgOrder.map((org) => ({ org, titles: byOrg.get(org)! })),
+      };
+    })
+    .sort((a, b) => b.count - a.count || order.indexOf(a.pathway) - order.indexOf(b.pathway));
+}
+
+/**
+ * The pathway chips shown on the collapsed line, derived from the roles that
+ * are actually listed.
+ *
+ * Deliberately not `priorPathways`: that list drops any pathway already counted
+ * as the person's current one, while the role list doesn't, so the two could
+ * disagree — a heading showing only "Executive Branch" above roles that include
+ * Private Sector and Academia. Reading both from the same source makes that
+ * contradiction impossible.
+ */
+export function priorRolePathways(prior: PriorRole[]): string[] {
+  return groupPriorRoles(prior).map((g) => g.pathway);
+}
+
 // ── Matching ─────────────────────────────────────────────────────────────────
 
 /**

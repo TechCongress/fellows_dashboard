@@ -254,8 +254,14 @@ function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alum
               {alumni.fellow_types.length > 0 && <InfoRow label="Fellow Type(s)" value={alumni.fellow_types.join(', ')} />}
               {alumni.cohort && <InfoRow label="Cohort" value={alumni.cohort} />}
               {alumni.chamber && <InfoRow label="Chamber" value={alumni.chamber} />}
-              {alumni.party && <InfoRow label="Party" value={alumni.party} />}
-              {aisf && <InfoRow label="Branch" value="Executive Branch" />}
+              {alumni.party && (
+                <InfoRow label="Party" value={
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${PARTY_BG[alumni.party] || 'bg-gray-400'}`}>
+                    {alumni.party}
+                  </span>
+                } />
+              )}
+              {aisf && <InfoRow label="Branch" value={<Badge label="Executive Branch" bg="bg-slate-100" text="text-slate-600" />} />}
               {alumni.office_served && <InfoRow label="Office Served" value={alumni.office_served} />}
               {alumni.served_on_hill && <InfoRow label="Post-fellowship" value="Served on the Hill" />}
               {alumni.currently_on_hill && <InfoRow label="Currently" value="On the Hill" />}
