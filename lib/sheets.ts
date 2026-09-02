@@ -1156,8 +1156,9 @@ function rowToEntry(row: string[], cols: Record<string, number>): CareerHistoryE
 }
 
 /**
- * Coerce whatever the sheet holds into "YYYY-MM". Accepts "2024-09",
- * "2024-09-01", "9/2024", "Sep 2024". Anything unparseable is passed through
+ * Coerce whatever the sheet holds into "YYYY-MM", or "YYYY" for a role whose
+ * exact month isn't known. Accepts "2024-09", "2024-09-01", "9/2024",
+ * "Sep 2024", and a bare "2024". Anything else unparseable is passed through
  * untouched so a human can see and fix it rather than having it disappear.
  */
 function normalizeMonth(value: string): string {
@@ -1167,6 +1168,7 @@ function normalizeMonth(value: string): string {
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
   m = v.match(/^(\d{1,2})\/(?:\d{1,2}\/)?(\d{4})$/);
   if (m) return `${m[2]}-${m[1].padStart(2, '0')}`;
+  if (/^\d{4}$/.test(v)) return v;
   const parsed = new Date(`${v} 1`);
   if (!isNaN(parsed.getTime()) && /[A-Za-z]/.test(v)) {
     return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
@@ -1182,10 +1184,20 @@ function normalizeMonth(value: string): string {
  *
  * Round-trips safely: the API hands back the formatted "07/2008" and
  * normalizeMonth turns it straight back into "2008-07" for the editor.
+ *
+ * A bare year ("2008", month unknown) is written with a leading apostrophe to
+ * force Sheets to store it as literal text. Without that, USER_ENTERED would
+ * treat "2008" as the number 2008, and the column's MM/yyyy DATE format would
+ * reinterpret that number as a serial date, showing a nonsense date instead
+ * of the year. The apostrophe isn't part of the stored value, so it reads
+ * back as a plain "2008" and round-trips through normalizeMonth untouched.
  */
 function toSheetMonth(value: string): string {
-  const m = (value || '').match(/^(\d{4})-(\d{2})$/);
-  return m ? `${m[2]}/${m[1]}` : (value || '');
+  const v = (value || '').trim();
+  const m = v.match(/^(\d{4})-(\d{2})$/);
+  if (m) return `${m[2]}/${m[1]}`;
+  if (/^\d{4}$/.test(v)) return `'${v}`;
+  return v;
 }
 
 // Sheet IDs are stable for the life of the tab; cache per server instance.
