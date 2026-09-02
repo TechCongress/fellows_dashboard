@@ -337,12 +337,16 @@ export function phaseStyle(phase: string) {
   return PHASE_STYLES[(phase as CareerPhase)] || PHASE_STYLES['Post-Fellowship'];
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "2024-09" → "Sep 2024". Empty end date renders as "Present". */
+/**
+ * "2024-09" → "Sep 2024". A bare year ("2024", for a role whose exact month
+ * isn't known) passes through unchanged. Empty end date renders as "Present".
+ */
 export function formatMonth(value: string, emptyLabel = 'Present'): string {
   if (!value) return emptyLabel;
   const [y, m] = value.split('-');
+  if (!m) return value;
   const idx = parseInt(m, 10) - 1;
   if (!y || isNaN(idx) || idx < 0 || idx > 11) return value;
   return `${MONTH_NAMES[idx]} ${y}`;
@@ -353,13 +357,24 @@ export function dateRangeLabel(start: string, end: string): string {
 }
 
 /**
+ * Sortable key for a Start/End value. A bare year ("2024", month unknown) is
+ * padded to "2024-00" so it sorts before any dated month within that same
+ * year — a reasonable default when we only know the year. A blank value sorts
+ * to the very end.
+ */
+function sortKey(value: string): string {
+  if (!value) return '9999-99';
+  return /^\d{4}$/.test(value) ? `${value}-00` : value;
+}
+
+/**
  * Display order is derived from Start Date, ascending — always. `order` is
  * only ever an internal tie-breaker for same-month starts and is recomputed on
  * every write, so nobody has to maintain it by hand.
  */
 export function sortHistory<T extends { start: string; order?: number }>(entries: T[]): T[] {
   return [...entries].sort((a, b) => {
-    const cmp = (a.start || '9999-99').localeCompare(b.start || '9999-99');
+    const cmp = sortKey(a.start).localeCompare(sortKey(b.start));
     if (cmp !== 0) return cmp;
     return (a.order ?? 0) - (b.order ?? 0);
   });
@@ -425,20 +440,36 @@ export function groupByOrganization<T extends { org: string; sector: string; sta
  * Human-readable length of a role or tenure, e.g. "2 yrs 5 mos". A blank end
  * date means "through today". Inclusive of both endpoints, so a single month
  * reads as "1 mo" rather than "0 mos".
+ *
+ * When either endpoint is only a bare year (month unknown), there isn't
+ * enough precision for a month count, so this falls back to an approximate
+ * year count instead, e.g. "~3 yrs" or "<1 yr" — rather than showing nothing.
  */
 export function durationLabel(start: string, end: string): string {
   if (!start) return '';
-  const [sy, sm] = start.split('-').map(Number);
-  if (!sy || !sm) return '';
-  let ey: number, em: number;
+  const sMatch = start.match(/^(\d{4})(?:-(\d{2}))?$/);
+  if (!sMatch) return '';
+  const sy = Number(sMatch[1]);
+  const sm = sMatch[2] ? Number(sMatch[2]) : null;
+
+  let ey: number;
+  let em: number | null;
   if (end) {
-    [ey, em] = end.split('-').map(Number);
-    if (!ey || !em) return '';
+    const eMatch = end.match(/^(\d{4})(?:-(\d{2}))?$/);
+    if (!eMatch) return '';
+    ey = Number(eMatch[1]);
+    em = eMatch[2] ? Number(eMatch[2]) : null;
   } else {
     const now = new Date();
     ey = now.getFullYear();
     em = now.getMonth() + 1;
   }
+
+  if (sm == null || em == null) {
+    const years = ey - sy;
+    return years <= 0 ? '<1 yr' : `~${years} yr${years > 1 ? 's' : ''}`;
+  }
+
   const months = Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
   const years = Math.floor(months / 12);
   const rem = months % 12;

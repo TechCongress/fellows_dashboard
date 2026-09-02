@@ -13,6 +13,7 @@ import { CareerHistoryEntry, CareerPhase } from '@/types';
 import {
   CAREER_PHASES,
   CAREER_SECTORS,
+  MONTH_NAMES,
   OrgTenure,
   dateRangeLabel,
   durationLabel,
@@ -152,6 +153,61 @@ export function CareerTimeline({ entries }: { entries: CareerHistoryEntry[] }) {
 
 // ── Editor ───────────────────────────────────────────────────────────────────
 
+/** Split a "YYYY-MM"/"YYYY" value into its year and month parts (month blank if unknown). */
+function splitYearMonth(value: string): { year: string; month: string } {
+  const m = value.match(/^(\d{4})(?:-(\d{2}))?$/);
+  return m ? { year: m[1], month: m[2] || '' } : { year: '', month: '' };
+}
+
+/**
+ * Year + optional Month, for a role's Start or End date. Some fellows only
+ * know the year a prior position began or ended, so the month is deliberately
+ * optional — a bare year ("2020") is a complete, valid value, not a
+ * placeholder for one. The Month select is disabled until a Year is entered,
+ * since a month with no year isn't a meaningful date.
+ */
+function YearMonthField({
+  value,
+  onChange,
+  disabled,
+  fieldClass,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  fieldClass: string;
+}) {
+  const { year, month } = splitYearMonth(value);
+  const commit = (nextYear: string, nextMonth: string) => {
+    if (!nextYear) { onChange(''); return; }
+    onChange(nextMonth ? `${nextYear}-${nextMonth}` : nextYear);
+  };
+  return (
+    <div className="flex gap-1.5">
+      <input
+        className={`${fieldClass} w-20`}
+        inputMode="numeric"
+        placeholder="YYYY"
+        maxLength={4}
+        value={year}
+        disabled={disabled}
+        onChange={(e) => commit(e.target.value.replace(/\D/g, '').slice(0, 4), month)}
+      />
+      <select
+        className={`${fieldClass} flex-1`}
+        value={month}
+        disabled={disabled || year.length !== 4}
+        onChange={(e) => commit(year, e.target.value)}
+      >
+        <option value="">Month unknown</option>
+        {MONTH_NAMES.map((name, i) => (
+          <option key={name} value={String(i + 1).padStart(2, '0')}>{name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function EditorRow({
   entry,
   index,
@@ -164,7 +220,8 @@ function EditorRow({
   onRemove: (i: number) => void;
 }) {
   const isCurrent = entry.phase === 'Current';
-  const field = 'mt-1 w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-400';
+  const fieldBase = 'px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-400';
+  const field = `mt-1 w-full ${fieldBase}`;
   const label = 'block text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
 
   return (
@@ -199,13 +256,17 @@ function EditorRow({
         </div>
         <div>
           <label className={label}>Start</label>
-          <input type="month" className={field} value={entry.start}
-            onChange={(e) => onChange(index, { start: e.target.value })} />
+          <div className="mt-1">
+            <YearMonthField fieldClass={fieldBase} value={entry.start}
+              onChange={(start) => onChange(index, { start })} />
+          </div>
         </div>
         <div>
           <label className={label}>End</label>
-          <input type="month" className={field} value={entry.end} disabled={isCurrent}
-            onChange={(e) => onChange(index, { end: e.target.value })} />
+          <div className="mt-1">
+            <YearMonthField fieldClass={fieldBase} value={entry.end} disabled={isCurrent}
+              onChange={(end) => onChange(index, { end })} />
+          </div>
         </div>
       </div>
       <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">

@@ -13,7 +13,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body className="min-h-full bg-gray-50 text-gray-900 antialiased">
+      {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
+          data-* attributes onto <body> before React hydrates, which otherwise
+          trips a false-positive hydration mismatch warning. */}
+      <body className="min-h-full bg-gray-50 text-gray-900 antialiased" suppressHydrationWarning>
         {children}
       </body>
     </html>

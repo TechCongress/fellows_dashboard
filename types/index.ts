@@ -92,8 +92,8 @@ export interface CareerHistoryEntry {
   org: string;
   title: string;
   sector: string;
-  start: string;          // "YYYY-MM"
-  end: string;            // "YYYY-MM", or '' when ongoing (Phase = Current)
+  start: string;          // "YYYY-MM", or "YYYY" when the exact month isn't known
+  end: string;            // "YYYY-MM"/"YYYY", or '' when ongoing (Phase = Current)
   notes: string;
 }
 
