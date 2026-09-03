@@ -153,9 +153,16 @@ export function CareerTimeline({ entries }: { entries: CareerHistoryEntry[] }) {
 
 // ── Editor ───────────────────────────────────────────────────────────────────
 
-/** Split a "YYYY-MM"/"YYYY" value into its year and month parts (month blank if unknown). */
+/**
+ * Split a "YYYY-MM"/"YYYY" value into its year and month parts (month blank
+ * if unknown). The year half accepts 1-4 digits, not just a complete 4-digit
+ * year — this is a controlled input's live value while someone is mid-type,
+ * not just the saved form, so it has to round-trip "2", "20", "202" too, or
+ * every keystroke before the 4th digit gets discarded and typing a year
+ * appears to do nothing.
+ */
 function splitYearMonth(value: string): { year: string; month: string } {
-  const m = value.match(/^(\d{4})(?:-(\d{2}))?$/);
+  const m = value.match(/^(\d{1,4})(?:-(\d{2}))?$/);
   return m ? { year: m[1], month: m[2] || '' } : { year: '', month: '' };
 }
 
@@ -199,7 +206,11 @@ function YearMonthField({
         disabled={disabled || year.length !== 4}
         onChange={(e) => commit(year, e.target.value)}
       >
-        <option value="">Month unknown</option>
+        {/* Before a year is entered, this is just an inert placeholder — the
+            select is disabled anyway. Once a year is set, choosing this
+            option is a deliberate "I don't know the month" for that entry,
+            so the label changes to say that explicitly. */}
+        <option value="">{year.length === 4 ? 'Month unknown' : 'Month'}</option>
         {MONTH_NAMES.map((name, i) => (
           <option key={name} value={String(i + 1).padStart(2, '0')}>{name}</option>
         ))}
@@ -357,7 +368,7 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Career Trajectory</h3>
         {!editing && available && (
           <button onClick={startEdit}
-            className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors">
             ✎ Edit Career History
           </button>
         )}

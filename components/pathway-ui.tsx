@@ -18,6 +18,9 @@ import {
   mailtoHref,
   pathwayColors,
   policyAreaColors,
+  groupPriorRoles,
+  priorRolePathways,
+  PRIOR_ROLES_COLLAPSE_AT,
 } from '@/lib/career-pathway';
 
 // ── Chips ────────────────────────────────────────────────────────────────────
@@ -396,6 +399,76 @@ function SetupNotice({ setup }: { setup: PathwaySetup }) {
 }
 
 /**
+ * Prior post-fellowship roles, grouped by pathway.
+ *
+ * Collapsed by default once there are enough roles to be worth hiding. The
+ * closed line carries the only thing that affects scoring — which pathways they
+ * held, and how many roles back each — so opening it is optional detail rather
+ * than the point.
+ */
+function PriorRoles({ prior }: { prior: { pathway: string; title: string; org: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const groups = groupPriorRoles(prior);
+  const pathways = priorRolePathways(prior);
+  if (groups.length === 0) return null;
+
+  const total = groups.reduce((n, g) => n + g.count, 0);
+  const collapsible = total >= PRIOR_ROLES_COLLAPSE_AT;
+
+  const body = (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <div key={g.pathway}>
+          <div className="flex items-center gap-2 pb-1.5 mb-2 border-b border-gray-100">
+            <PathwayChip tag={g.pathway} />
+            <span className="text-[11px] text-gray-400 tabular-nums">
+              {g.count} role{g.count === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {g.orgs.map((o, i) => (
+              <div key={`${o.org}-${i}`}>
+                {o.org && <div className="text-[13px] font-semibold text-gray-700">{o.org}</div>}
+                <div className="text-xs text-gray-500">
+                  {o.titles.map((t, j) => (
+                    <span key={`${t}-${j}`}>{j > 0 && <span className="text-gray-300"> · </span>}{t}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <p className="text-[11px] text-gray-400">These earn partial credit when a fellow targets one of them.</p>
+    </div>
+  );
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Also held since the fellowship</h3>
+
+      {!collapsible ? body : (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="w-full flex items-center gap-2 flex-wrap px-3 py-2.5 text-left hover:bg-gray-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20"
+          >
+            <span className={`text-[9px] text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+            <span className="flex flex-wrap gap-1.5">
+              {pathways.map((pw) => <PathwayChip key={pw} tag={pw} />)}
+            </span>
+            <span className="text-xs text-gray-500 tabular-nums">{total} roles</span>
+          </button>
+          {open && <div className="px-3 pb-3 pt-3 border-t border-gray-200">{body}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The sheet's multi-select dropdowns have no maximum of their own, so someone
  * can pick more than the cap. Saying which ones count beats letting the sheet
  * and the dashboard quietly disagree.
@@ -734,20 +807,7 @@ export function AlumniPathwayTab({
         )}
       </div>
 
-      {!loading && d && d.prior.length > 0 && (
-        <div>
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Also held since the fellowship</h3>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {d.priorPathways.map((p) => <PathwayChip key={p} tag={p} />)}
-          </div>
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            {d.prior.map((p, i) => (
-              <span key={`${p.org}-${i}`}>{i > 0 && '; '}{p.title}{p.org ? ` at ${p.org}` : ''} — {p.pathway}</span>
-            ))}
-            . These earn partial credit when a fellow targets one of them.
-          </p>
-        </div>
-      )}
+      {!loading && d && d.prior.length > 0 && <PriorRoles prior={d.prior} />}
 
       <TagBlock
         title="Pathway Override"
