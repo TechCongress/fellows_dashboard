@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
 import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
+import { CareerHistorySection } from '@/components/career-history';
 
 type SortOption = 'Cohort (newest first)' | 'Cohort (oldest first)' | 'Priority (Flagged first)' | 'Name (A–Z)' | 'Name (Z–A)' | 'Last Check-in (oldest first)' | 'Last Check-in (newest first)' | 'End Date (soonest first)' | 'End Date (latest first)';
 
@@ -340,7 +341,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
     )},
     { key: 'contact', label: 'Contact' },
     { key: 'placement', label: 'Placement' },
-    { key: 'background', label: 'Background' },
+    { key: 'background', label: 'Background & Career History' },
     { key: 'pathway', label: 'Career Pathway' },
     { key: 'reports', label: 'Status Reports' },
     { key: 'checkins', label: 'Check-ins' },
@@ -471,7 +472,8 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
           )}
 
           {tab === 'background' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
+              <CareerHistorySection personId={fellow.id} personName={fellow.name} />
               {fellow.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{fellow.prior_role}</p></div>}
               {fellow.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{fellow.education}</p></div>}
               {fellow.notes && (
