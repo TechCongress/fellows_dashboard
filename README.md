@@ -32,7 +32,10 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - Multi-select fellow type support (fellows can hold multiple designations)
 - **On the Hill** tab — alumni currently working in Congress, with Senate/House breakdown
 - **Served on Hill Post-fellowship** tab — alumni who worked on the Hill at any point after their fellowship
-- Sector tracking: Government, Policy/Think Tank/Nonprofit, Private, Academia, Other
+- Sector tracking: Government (with Legislative, Executive, Judicial, and
+  State/Local branch options), Policy/Think Tank/Nonprofit, Private, Academia,
+  Other — a "By Sector" chart keeps a single Government slice, alongside a
+  second "By Government Branch" chart that breaks that slice back out
 - Engagement tracking via "Last Engaged" date and engagement notes
 - Filter by fellow type, sector, party, chamber, and cohort
 
@@ -95,22 +98,34 @@ derivation:
 | Civil Society/Nonprofit | Advocacy, civic tech, or nonprofit policy role. |
 | State & Local Government | Non-elected role in state, city, or county government — agency, governor's or mayor's office, or legislative staff. |
 
-Each pathway maps to a broad **Sector** (`Government`, `Policy/Think
-Tank/Nonprofit`, `Private`, `Academia`, `Other`) for the sector-match scoring
-signal (see below). Two pathways deliberately map to no sector, so targeting
-them never earns that bonus — though an exact pathway match still scores +3
-on its own:
-- **Law School** — a student isn't employed in any of the five sectors.
-- **State & Local Government** — the Sector taxonomy has no state/local
-  bucket, so a state or city employee is recorded under the single
-  `Government` sector, which the scoring split (below) reads as *federal*
-  Executive Branch. Awarding the sector bonus here would hand +2 to every
-  federal agency alum for a fellow aiming at city hall.
+Each pathway maps to a broad **Sector** for the sector-match scoring signal
+(see below). The Sector taxonomy is `Government` (plus four branch-specific
+variants — **Legislative**, **Executive**, **Judicial**, **State/Local** —
+selectable wherever Sector is set), `Policy/Think Tank/Nonprofit`, `Private`,
+`Academia`, and `Other`. Government branch is a real, visible field — an alum
+can be tagged `Government – Legislative Branch` directly — not something
+guessed or hidden:
+- **Stay in Congress** and **Elected Office** map to `Government – Legislative
+  Branch`
+- **Executive Branch** maps to `Government – Executive Branch`
+- **State & Local Government** maps to `Government – State/Local`
+- There's no pathway for **Judicial Branch** yet, so tagging someone there
+  doesn't earn a sector bonus for any current target — same situation Law
+  School and `Other` are already in, below
 
-`Other` is the flip side of the same idea: it's a real, selectable sector for
-roles that genuinely don't fit the rest, but no pathway maps to it — so an
-alum whose sector is `Other` can never earn the sector-match bonus either.
-"Unclassifiable" isn't evidence of fitting any particular target pathway.
+**Law School** deliberately maps to no sector — a student isn't employed in
+any of the five — so targeting it never earns the sector bonus, though an
+exact pathway match still scores +3 on its own. `Other` is the flip side of
+the same idea: a real, selectable sector for roles that genuinely don't fit
+the rest, but no pathway maps to it — so an alum whose sector is `Other` can
+never earn the sector-match bonus either. "Unclassifiable" isn't evidence of
+fitting any particular target pathway.
+
+An alum still tagged with plain `Government` (branch unspecified) falls back
+to a guess — the existing `Currently on the Hill?` flag picks Legislative vs.
+Executive Branch — same heuristic this always used, just now guessing into
+the same visible taxonomy rather than a hidden one. It only ever affects the
+*score*; it never changes what's stored or shown on the alum's own record.
 
 **Academia vs. Policy/Think Tank/Nonprofit** is the distinction people
 actually get stuck on tagging, since plenty of research organizations are
@@ -136,10 +151,10 @@ affiliation and research mission outweigh nonprofit tax status here.
 | Alum's sector maps to a target-pathway sector | +2 |
 | A past post-fellowship pathway matches a target | +1 |
 
-Alumni marked "do not contact" are excluded outright. For scoring only,
-"Government" is split into Congress vs. Executive Branch using the existing
-`Currently on the Hill?` flag — **this split never surfaces in the UI**; badges,
-filters, and the By Sector chart all keep a single Government bucket.
+Alumni marked "do not contact" are excluded outright. See "Pathway & sector
+taxonomy" above for how an alum's Government branch factors into the sector
+signal, including the one remaining scoring-only guess for alumni not yet
+tagged with a specific branch.
 
 #### Notes
 A free-text note per person, saved to the `Notes` column of their row on the

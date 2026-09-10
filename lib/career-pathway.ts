@@ -31,11 +31,29 @@ export const MAX_TARGET_PATHWAYS = 2;
  * rewording can silently miss.
  */
 export const SECTOR_POLICY = 'Policy/Think Tank/Nonprofit';
+
+/**
+ * Branch-specific Government sectors. Plain "Government" stays selectable
+ * too — for a role that genuinely doesn't fit one branch, or a row nobody's
+ * gotten around to re-tagging yet — so these ADD to the taxonomy rather than
+ * replacing it.
+ */
+export const GOVERNMENT_BRANCHES = [
+  'Government – Legislative Branch',
+  'Government – Executive Branch',
+  'Government – Judicial Branch',
+  'Government – State/Local',
+];
+
+export function isGovernmentSector(sector: string): boolean {
+  return sector === 'Government' || GOVERNMENT_BRANCHES.includes(sector);
+}
+
 // "Other" is a real, selectable sector — a catch-all for roles that genuinely
-// don't fit the four. It deliberately has no entry in PATHWAY_TO_SECTORS below,
+// don't fit the rest. It deliberately has no entry in PATHWAY_TO_SECTORS below,
 // so it never contributes a sector bonus to matching: "unclassifiable" isn't
 // evidence of a fit with any particular target pathway.
-export const CAREER_SECTORS = ['Government', SECTOR_POLICY, 'Private', 'Academia', 'Other'];
+export const CAREER_SECTORS = ['Government', ...GOVERNMENT_BRANCHES, SECTOR_POLICY, 'Private', 'Academia', 'Other'];
 
 /**
  * Sector labels that have been renamed. Values already sitting in the
@@ -217,30 +235,25 @@ export function priorRolePathways(prior: PriorRole[]): string[] {
 
 /**
  * A target pathway implies a broad sector, used as a second matching signal
- * that STACKS with an exact realized-pathway match.
- *
- * The Congress-vs-Executive-Branch split below exists ONLY inside this scoring
- * logic. It is derived on the fly from the existing `currently_on_hill` flag
- * and must never surface in the UI — badges, filters, and the "By Sector" pie
- * chart all keep a single "Government" bucket. (Explicit product decision.)
+ * that STACKS with an exact realized-pathway match. These map straight to the
+ * real, visible Government branch sectors (GOVERNMENT_BRANCHES) — no hidden
+ * split here anymore; see effectiveSector below for the one heuristic that
+ * remains, which only ever fires for an alum still tagged plain "Government".
  */
 const PATHWAY_TO_SECTORS: Record<string, string[]> = {
-  'Stay in Congress': ['Government: Congress'],
-  'Executive Branch': ['Government: Executive Branch'],
-  'Elected Office': ['Government: Congress'],
+  'Stay in Congress': ['Government – Legislative Branch'],
+  'Executive Branch': ['Government – Executive Branch'],
+  // Elected Office spans every branch and level (senator, governor, mayor,
+  // judge), so a single sector is an approximation — Legislative Branch is
+  // the closest one-value fit, and the exact pathway match (+3) is doing most
+  // of the work here anyway; the sector bonus (+2) is a secondary signal.
+  'Elected Office': ['Government – Legislative Branch'],
   'Think Tank': [SECTOR_POLICY],
   'Civil Society/Nonprofit': [SECTOR_POLICY],
   'Private Sector': ['Private'],
   'Academia': ['Academia'],
   'Law School': [],
-  // Deliberately empty, for the same reason as Law School. The Sector taxonomy
-  // has no state/local bucket: a state or city employee is recorded as
-  // "Government", which the scoring split reads as federal Executive Branch
-  // because they aren't on the Hill. Awarding the sector bonus here would hand
-  // +2 to every federal agency alum for a fellow aiming at city hall. An exact
-  // pathway match still scores +3, which is the signal that actually means
-  // something.
-  'State & Local Government': [],
+  'State & Local Government': ['Government – State/Local'],
 };
 
 function targetSectorsOf(targetPathways: string[]): string[] {
@@ -255,11 +268,17 @@ function targetSectorsOf(targetPathways: string[]): string[] {
  * Matching-only sector refinement. Does not change `alumni.sector` anywhere.
  * Normalises first so a renamed label reaching this function from anywhere —
  * not just via fetchAlumni — still scores correctly.
+ *
+ * An alum already tagged with a specific Government branch is used as-is —
+ * they said which branch, so there's nothing left to guess. The
+ * `currently_on_hill`-based guess only fires for the still-valid plain
+ * "Government" catch-all, and only ever changes the *score*, never what's
+ * stored or shown on the alum's own record.
  */
 function effectiveSector(a: Alumni): string {
   const sector = normalizeSector(a.sector);
   if (sector === 'Government') {
-    return a.currently_on_hill ? 'Government: Congress' : 'Government: Executive Branch';
+    return a.currently_on_hill ? 'Government – Legislative Branch' : 'Government – Executive Branch';
   }
   return sector;
 }
