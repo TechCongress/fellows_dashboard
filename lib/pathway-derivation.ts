@@ -256,14 +256,19 @@ export function deriveAlumniPathways(
   fallback?: { current_role?: string; sector?: string }
 ): AlumniPathways {
   const sorted = sortHistory(history || []);
-  const currentRoles = sorted.filter((r) => r.phase === 'Current');
+  // Volunteer/unpaid roles (a board seat, campaign volunteering, pro bono
+  // work) don't count as evidence of a pathway — an unpaid commitment isn't
+  // necessarily the direction someone's career actually took, and letting it
+  // outweigh or stand in for their paid work would distort both the "current
+  // pathway" signal and the alumni-matching scores built on top of it.
+  const currentRoles = sorted.filter((r) => r.phase === 'Current' && !r.is_volunteer);
 
   // A missing `Current` flag is usually an oversight, so fall back to the most
   // recent role — but ONLY among post-fellowship roles. Deriving from a
   // Fellowship or Pre-Fellowship row would report the placement TechCongress
   // made as the pathway they went on to choose, which is exactly backwards:
   // every alum would look like they "stayed in Congress".
-  const postFellowship = sorted.filter((r) => r.phase === 'Post-Fellowship');
+  const postFellowship = sorted.filter((r) => r.phase === 'Post-Fellowship' && !r.is_volunteer);
   const basis = currentRoles.length > 0
     ? currentRoles
     : postFellowship.length > 0

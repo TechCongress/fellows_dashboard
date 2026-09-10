@@ -24,7 +24,7 @@ import {
   totalDurationLabel,
 } from '@/lib/career-pathway';
 
-type DraftEntry = Pick<CareerHistoryEntry, 'phase' | 'title' | 'org' | 'sector' | 'start' | 'end' | 'notes'>;
+type DraftEntry = Pick<CareerHistoryEntry, 'phase' | 'title' | 'org' | 'sector' | 'start' | 'end' | 'notes' | 'is_volunteer'>;
 
 const BLANK_ROW: DraftEntry = {
   phase: 'Post-Fellowship',
@@ -34,6 +34,7 @@ const BLANK_ROW: DraftEntry = {
   start: '',
   end: '',
   notes: '',
+  is_volunteer: false,
 };
 
 // ── Timeline (read view) ─────────────────────────────────────────────────────
@@ -60,6 +61,20 @@ function PhaseChip({ phase }: { phase: string }) {
   );
 }
 
+/**
+ * Same chip shape as PhaseChip, so it reads as part of the same tag family,
+ * but a color no phase uses (amber) — unmistakably a different kind of label,
+ * not a fifth phase. It's an attribute of the role, independent of phase: a
+ * volunteer role can be Pre-Fellowship, Post-Fellowship, or Current.
+ */
+function VolunteerChip() {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800">
+      Volunteer
+    </span>
+  );
+}
+
 /** A tenure with a single role — rendered exactly as the timeline always has. */
 function SingleRoleItem({ entry }: { entry: CareerHistoryEntry }) {
   const s = phaseStyle(entry.phase);
@@ -69,6 +84,7 @@ function SingleRoleItem({ entry }: { entry: CareerHistoryEntry }) {
       {entry.org && <p className="text-sm text-gray-600 mt-0.5">{entry.org}</p>}
       <div className="flex flex-wrap items-center gap-2 mt-1.5">
         <PhaseChip phase={entry.phase} />
+        {entry.is_volunteer && <VolunteerChip />}
         <span className="text-xs text-gray-500 tabular-nums">{dateRangeLabel(entry.start, entry.end)}</span>
         {entry.sector && <span className="text-xs text-gray-500">· {entry.sector}</span>}
       </div>
@@ -111,6 +127,7 @@ function TenureItem({ tenure }: { tenure: OrgTenure<CareerHistoryEntry> }) {
               <p className="text-[13px] font-semibold text-gray-800">{role.title || '—'}</p>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <PhaseChip phase={role.phase} />
+                {role.is_volunteer && <VolunteerChip />}
                 <span className="text-xs text-gray-500 tabular-nums">{dateRangeLabel(role.start, role.end)}</span>
                 {durationLabel(role.start, role.end) && (
                   <span className="text-[11px] text-gray-400">{durationLabel(role.start, role.end)}</span>
@@ -294,6 +311,11 @@ function EditorRow({
             : { phase: 'Post-Fellowship' })} />
         This is their current role (sets Phase to &ldquo;Current&rdquo; and clears the end date)
       </label>
+      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+        <input type="checkbox" className="rounded" checked={!!entry.is_volunteer}
+          onChange={(e) => onChange(index, { is_volunteer: e.target.checked })} />
+        Unpaid / volunteer role
+      </label>
       {violation && (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
           ⚠️ {violation}
@@ -340,8 +362,8 @@ export function CareerHistorySection({ personId, personName, cohort }: { personI
   function startEdit() {
     setToast('');
     setError('');
-    setDraft(sortHistory(entries).map(({ phase, title, org, sector, start, end, notes }) => ({
-      phase, title, org, sector: sector || 'Government', start, end, notes,
+    setDraft(sortHistory(entries).map(({ phase, title, org, sector, start, end, notes, is_volunteer }) => ({
+      phase, title, org, sector: sector || 'Government', start, end, notes, is_volunteer,
     })));
     setEditing(true);
   }
@@ -402,7 +424,7 @@ export function CareerHistorySection({ personId, personName, cohort }: { personI
       {!available && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
           No <strong>Alumni Career History</strong> tab found in the spreadsheet. Add a tab with that exact name and the
-          columns <em>ID, Name, Order, Phase, Organization, Title, Sector, Start Date, End Date, Notes</em> to turn this on.
+          columns <em>ID, Name, Order, Phase, Organization, Title, Volunteer Position?, Sector, Start Date, End Date, Notes</em> to turn this on.
         </p>
       )}
 

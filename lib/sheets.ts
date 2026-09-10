@@ -1105,6 +1105,7 @@ const HISTORY_HEADER_ALIASES: Record<string, string[]> = {
   phase:  ['Phase'],
   org:    ['Organization', 'Org', 'Employer'],
   title:  ['Title', 'Role', 'Position'],
+  volunteer: ['Volunteer Position?', 'Volunteer Position', 'Volunteer', 'Unpaid/Volunteer', 'Is Volunteer'],
   sector: ['Sector'],
   start:  ['Start Date', 'Start'],
   end:    ['End Date', 'End'],
@@ -1152,6 +1153,7 @@ function rowToEntry(row: string[], cols: Record<string, number>): CareerHistoryE
     start: normalizeMonth(at('start')),
     end: normalizeMonth(at('end')),
     notes: at('notes'),
+    is_volunteer: toBool(at('volunteer')),
   };
 }
 
@@ -1307,6 +1309,7 @@ export async function saveCareerHistory(
         // "Current" means ongoing, so it never carries an end date.
         end: e.phase === 'Current' ? '' : normalizeMonth(e.end || ''),
         notes: (e.notes || '').trim(),
+        is_volunteer: !!e.is_volunteer,
         order: 0,
       }))
   ).map((e, i) => ({ ...e, order: i + 1 }));
@@ -1328,6 +1331,7 @@ export async function saveCareerHistory(
     put('start', toSheetMonth(e.start));
     put('end', toSheetMonth(e.end));
     put('notes', e.notes);
+    put('volunteer', e.is_volunteer ? 'TRUE' : 'FALSE');
     return row;
   };
 
