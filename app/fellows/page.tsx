@@ -588,7 +588,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
 
           {tab === 'background' && (
             <div className="space-y-6">
-              <CareerHistorySection personId={fellow.id} personName={fellow.name} />
+              <CareerHistorySection personId={fellow.id} personName={fellow.name} cohort={fellow.cohort} />
               {fellow.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{fellow.prior_role}</p></div>}
               {fellow.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{fellow.education}</p></div>}
               {fellow.notes && (
@@ -864,20 +864,20 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             <button
               onClick={() => onEditAll(fellow)}
               title="Edit cohort, status, fellow type, background, and other fields"
-              className="py-2 px-3 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 hover:text-gray-700 transition-colors whitespace-nowrap">
+              className="py-1.5 px-3 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 hover:text-gray-700 transition-colors whitespace-nowrap">
               Edit all fields
             </button>
           )}
           <button
             onClick={() => offboardingComplete ? setShowMoveModal(true) : setTab('offboarding')}
             title={offboardingComplete ? '' : 'Complete all offboarding tasks first'}
-            className={`flex-1 py-2 rounded-lg border text-sm transition-colors
+            className={`flex-1 py-1.5 rounded-lg border text-sm transition-colors
               ${offboardingComplete
                 ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
                 : 'border-amber-200 text-amber-600 hover:bg-amber-50'}`}>
             {offboardingComplete ? 'Move to Alumni' : '⚠️ Move to Alumni (offboarding incomplete)'}
           </button>
-          <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm hover:bg-gray-700 transition-colors">Close</button>
+          <button onClick={onClose} className="py-1.5 px-6 rounded-lg bg-gray-900 text-white text-sm hover:bg-gray-700 transition-colors">Close</button>
         </div>
       </div>
     </div>
