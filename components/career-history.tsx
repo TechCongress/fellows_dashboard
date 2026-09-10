@@ -148,7 +148,10 @@ export function CareerTimeline({ entries }: { entries: CareerHistoryEntry[] }) {
   const tenures = groupByOrganization(sortHistory(entries));
   return (
     <div className="relative pl-1">
-      <div className="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-gray-200" aria-hidden />
+      {/* Centered on the dots below: the dot sits pl-1 (4px) + its own 7.5px
+          radius from this container's edge, so the 1px line's left edge has
+          to land half a pixel short of that same 11.5px center. */}
+      <div className="absolute left-[11px] top-1.5 bottom-1.5 w-px bg-gray-200" aria-hidden />
       <ol className="space-y-3">
         {tenures.map((tenure, i) => {
           // The spine takes the most recent role's phase: it answers "where are
