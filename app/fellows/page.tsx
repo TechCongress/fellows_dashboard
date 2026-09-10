@@ -175,8 +175,78 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onClose: () => void; onFellowUpdate?: (updated: Fellow) => void }) {
-  const [tab, setTab] = useState<ModalTab>('onboarding');
+/** A label + input pair, sized to line up with InfoRow above it in read mode. */
+function EditRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3 items-center">
+      <label className="text-sm text-gray-500 w-36 flex-shrink-0">{label}</label>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const editInputClass = 'w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900';
+
+/** Small header row for a tab's read view: a section label plus an Edit trigger. */
+function SectionEditButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
+      Edit
+    </button>
+  );
+}
+
+type EditableSection = 'contact' | 'placement';
+
+function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditSection, onEditAll }: {
+  fellow: Fellow;
+  onClose: () => void;
+  onFellowUpdate?: (updated: Fellow) => void;
+  initialTab?: ModalTab;
+  initialEditSection?: EditableSection | null;
+  onEditAll?: (fellow: Fellow) => void;
+}) {
+  const [tab, setTab] = useState<ModalTab>(initialTab ?? 'onboarding');
+
+  // Inline edit-in-place for the Contact and Placement tabs — the fields
+  // people actually need to fix in a hurry. `sectionForm` always starts as a
+  // full copy of the fellow (not just the edited fields): the sheet write is
+  // a full-row rewrite, so anything left out would get blanked out rather
+  // than left alone.
+  const [editingSection, setEditingSection] = useState<EditableSection | null>(initialEditSection ?? null);
+  const [sectionForm, setSectionForm] = useState<Fellow>(fellow);
+  const [sectionSaving, setSectionSaving] = useState(false);
+  const [sectionError, setSectionError] = useState('');
+
+  function startEditSection(section: EditableSection) {
+    setSectionForm(fellow);
+    setEditingSection(section);
+    setSectionError('');
+  }
+
+  function cancelEditSection() {
+    setEditingSection(null);
+    setSectionError('');
+  }
+
+  async function saveSection() {
+    setSectionSaving(true);
+    setSectionError('');
+    try {
+      const res = await fetch('/api/fellows', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sectionForm),
+      });
+      if (!res.ok) throw new Error('save failed');
+      if (onFellowUpdate) onFellowUpdate(sectionForm);
+      setEditingSection(null);
+    } catch {
+      setSectionError('Could not save. Please try again.');
+    } finally {
+      setSectionSaving(false);
+    }
+  }
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loadingCheckins, setLoadingCheckins] = useState(false);
@@ -440,17 +510,60 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
           )}
 
           {tab === 'contact' && (
-            <dl className="space-y-3">
-              {fellow.email && <InfoRow label="Email" value={<a href={`mailto:${fellow.email}`} className="text-blue-600 hover:underline">{fellow.email}</a>} />}
-              {fellow.congressional_email && <InfoRow label="Congressional Email" value={<a href={`mailto:${fellow.congressional_email}`} className="text-blue-600 hover:underline">{fellow.congressional_email}</a>} />}
-              {fellow.phone && <InfoRow label="Phone" value={fellow.phone} />}
-              {fellow.linkedin && <InfoRow label="LinkedIn" value={<a href={fellow.linkedin} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View profile</a>} />}
-              {!fellow.email && !fellow.congressional_email && !fellow.phone && !fellow.linkedin && <p className="text-sm text-gray-400">No contact info on record.</p>}
-            </dl>
+            editingSection === 'contact' ? (
+              <div className="space-y-3">
+                <EditRow label="Email"><input type="text" value={sectionForm.email || ''} onChange={e => setSectionForm(f => ({ ...f, email: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="Congressional Email"><input type="text" value={sectionForm.congressional_email || ''} onChange={e => setSectionForm(f => ({ ...f, congressional_email: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="Phone"><input type="text" value={sectionForm.phone || ''} onChange={e => setSectionForm(f => ({ ...f, phone: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="LinkedIn"><input type="text" value={sectionForm.linkedin || ''} onChange={e => setSectionForm(f => ({ ...f, linkedin: e.target.value }))} className={editInputClass} /></EditRow>
+                {sectionError && <p className="text-xs text-red-600">{sectionError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={cancelEditSection} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button onClick={saveSection} disabled={sectionSaving} className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700 disabled:opacity-50">
+                    {sectionSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-end mb-2">
+                  <SectionEditButton onClick={() => startEditSection('contact')} />
+                </div>
+                <dl className="space-y-3">
+                  {fellow.email && <InfoRow label="Email" value={<a href={`mailto:${fellow.email}`} className="text-blue-600 hover:underline">{fellow.email}</a>} />}
+                  {fellow.congressional_email && <InfoRow label="Congressional Email" value={<a href={`mailto:${fellow.congressional_email}`} className="text-blue-600 hover:underline">{fellow.congressional_email}</a>} />}
+                  {fellow.phone && <InfoRow label="Phone" value={fellow.phone} />}
+                  {fellow.linkedin && <InfoRow label="LinkedIn" value={<a href={fellow.linkedin} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View profile</a>} />}
+                  {!fellow.email && !fellow.congressional_email && !fellow.phone && !fellow.linkedin && <p className="text-sm text-gray-400">No contact info on record.</p>}
+                </dl>
+              </div>
+            )
           )}
 
           {tab === 'placement' && (
-            <div className="grid grid-cols-2 gap-6">
+            editingSection === 'placement' ? (
+              <div className="max-w-md space-y-3">
+                <EditRow label="Office"><input type="text" value={sectionForm.office || ''} onChange={e => setSectionForm(f => ({ ...f, office: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="Chamber"><Select value={sectionForm.chamber || ''} onChange={v => setSectionForm(f => ({ ...f, chamber: v }))} options={['House', 'Senate', 'Executive Branch']} /></EditRow>
+                <EditRow label="Party"><Select value={sectionForm.party || ''} onChange={v => setSectionForm(f => ({ ...f, party: v }))} options={['Democrat', 'Republican', 'Independent', 'Institutional Office']} /></EditRow>
+                <EditRow label="Supervisor"><input type="text" value={sectionForm.supervisor_email || ''} onChange={e => setSectionForm(f => ({ ...f, supervisor_email: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="Start Date"><input type="text" value={sectionForm.start_date || ''} onChange={e => setSectionForm(f => ({ ...f, start_date: e.target.value }))} className={editInputClass} /></EditRow>
+                <EditRow label="End Date"><input type="text" value={sectionForm.end_date || ''} onChange={e => setSectionForm(f => ({ ...f, end_date: e.target.value }))} className={editInputClass} /></EditRow>
+                {sectionError && <p className="text-xs text-red-600">{sectionError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={cancelEditSection} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button onClick={saveSection} disabled={sectionSaving} className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700 disabled:opacity-50">
+                    {sectionSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 pt-1">Last Check-in updates automatically from the Check-ins tab.</p>
+              </div>
+            ) : (
+            <div>
+              <div className="flex items-center justify-end mb-1">
+                <SectionEditButton onClick={() => startEditSection('placement')} />
+              </div>
+              <div className="grid grid-cols-2 gap-6">
               <div>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Placement</h3>
                 <dl className="space-y-2">
@@ -468,7 +581,9 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
                   {fellow.last_check_in && <InfoRow label="Last Check-in" value={`${fellow.last_check_in} (${days} days ago)`} />}
                 </dl>
               </div>
+              </div>
             </div>
+            )
           )}
 
           {tab === 'background' && (
@@ -745,6 +860,14 @@ function FellowModal({ fellow, onClose, onFellowUpdate }: { fellow: Fellow; onCl
         </div>
 
         <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex gap-2">
+          {onEditAll && (
+            <button
+              onClick={() => onEditAll(fellow)}
+              title="Edit cohort, status, fellow type, background, and other fields"
+              className="py-2 px-3 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 hover:text-gray-700 transition-colors whitespace-nowrap">
+              Edit all fields
+            </button>
+          )}
           <button
             onClick={() => offboardingComplete ? setShowMoveModal(true) : setTab('offboarding')}
             title={offboardingComplete ? '' : 'Complete all offboarding tasks first'}
@@ -847,6 +970,11 @@ export default function FellowsPage() {
   const [fellows, setFellows] = useState<Fellow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFellow, setSelectedFellow] = useState<Fellow | null>(null);
+  // Which tab the View/Edit modal opens on, and whether it should drop
+  // straight into edit mode for that tab — the card's "Edit" button jumps
+  // straight to Contact in edit mode; "View" opens normally.
+  const [modalTab, setModalTab] = useState<ModalTab>('onboarding');
+  const [modalEditSection, setModalEditSection] = useState<'contact' | 'placement' | null>(null);
   const [showAddFellow, setShowAddFellow] = useState(false);
   const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
   const [addFellowSaving, setAddFellowSaving] = useState(false);
@@ -1017,7 +1145,9 @@ export default function FellowsPage() {
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {filtered.map(f => (
-                  <FellowCard key={f.id} fellow={f} onView={() => setSelectedFellow(f)} onEdit={() => { setEditFellow(f); setEditFellowForm({ ...f }); }} />
+                  <FellowCard key={f.id} fellow={f}
+                    onView={() => { setSelectedFellow(f); setModalTab('onboarding'); setModalEditSection(null); }}
+                    onEdit={() => { setSelectedFellow(f); setModalTab('contact'); setModalEditSection('contact'); }} />
                 ))}
               </div>
             )}
@@ -1026,7 +1156,9 @@ export default function FellowsPage() {
       </main>
 
       {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)}
-        onFellowUpdate={updated => { setFellows(fs => fs.map(f => f.id === updated.id ? updated : f)); setSelectedFellow(updated); }} />}
+        onFellowUpdate={updated => { setFellows(fs => fs.map(f => f.id === updated.id ? updated : f)); setSelectedFellow(updated); }}
+        initialTab={modalTab} initialEditSection={modalEditSection}
+        onEditAll={f => { setSelectedFellow(null); setEditFellow(f); setEditFellowForm({ ...f }); }} />}
 
       {editFellow && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
