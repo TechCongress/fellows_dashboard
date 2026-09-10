@@ -18,6 +18,7 @@ import {
   dateRangeLabel,
   durationLabel,
   groupByOrganization,
+  phaseDateViolation,
   phaseStyle,
   sortHistory,
   totalDurationLabel,
@@ -225,15 +226,18 @@ function YearMonthField({
 function EditorRow({
   entry,
   index,
+  cohort,
   onChange,
   onRemove,
 }: {
   entry: DraftEntry;
   index: number;
+  cohort: string;
   onChange: (i: number, patch: Partial<DraftEntry>) => void;
   onRemove: (i: number) => void;
 }) {
   const isCurrent = entry.phase === 'Current';
+  const violation = phaseDateViolation(entry.phase, entry.start, cohort);
   const fieldBase = 'px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-400';
   const field = `mt-1 w-full ${fieldBase}`;
   const label = 'block text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
@@ -290,6 +294,11 @@ function EditorRow({
             : { phase: 'Post-Fellowship' })} />
         This is their current role (sets Phase to &ldquo;Current&rdquo; and clears the end date)
       </label>
+      {violation && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
+          ⚠️ {violation}
+        </p>
+      )}
       <div className="flex items-center justify-between gap-3 pt-0.5">
         <span className="text-[11px] text-gray-400">Position in the timeline is set automatically by Start date.</span>
         <button type="button" onClick={() => onRemove(index)}
@@ -303,7 +312,7 @@ function EditorRow({
 
 // ── Section (fetch + view/edit toggle) ───────────────────────────────────────
 
-export function CareerHistorySection({ personId, personName }: { personId: string; personName: string }) {
+export function CareerHistorySection({ personId, personName, cohort }: { personId: string; personName: string; cohort: string }) {
   const [entries, setEntries] = useState<CareerHistoryEntry[]>([]);
   const [available, setAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -341,6 +350,12 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
     setDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
+  // Blocks Save outright rather than just warning — a Post-Fellowship role
+  // that predates the person's own cohort (or vice versa) is a data-entry
+  // error, not a judgment call. See phaseDateViolation for what's checked
+  // and why it's cohort-gated.
+  const hasViolation = draft.some((e) => phaseDateViolation(e.phase, e.start, cohort));
+
   async function save() {
     setSaving(true);
     setError('');
@@ -348,7 +363,7 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
       const res = await fetch('/api/career-history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ personId, personName, entries: draft }),
+        body: JSON.stringify({ personId, personName, cohort, entries: draft }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -416,7 +431,7 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
               hold concurrent positions, so several Current rows is valid data,
               not a mistake to flag. */}
           {draft.map((entry, i) => (
-            <EditorRow key={i} entry={entry} index={i} onChange={patchRow}
+            <EditorRow key={i} entry={entry} index={i} cohort={cohort} onChange={patchRow}
               onRemove={(idx) => setDraft((rows) => rows.filter((_, x) => x !== idx))} />
           ))}
           <button type="button" onClick={() => setDraft((rows) => [...rows, { ...BLANK_ROW }])}
@@ -428,7 +443,8 @@ export function CareerHistorySection({ personId, personName }: { personId: strin
               className="px-3.5 py-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
               Cancel
             </button>
-            <button type="button" onClick={save} disabled={saving}
+            <button type="button" onClick={save} disabled={saving || hasViolation}
+              title={hasViolation ? 'Fix the flagged role(s) above before saving' : ''}
               className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>

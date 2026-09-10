@@ -37,7 +37,7 @@ try {
   unlinkSync(tmpPath);
 }
 
-const { groupByOrganization, totalDurationLabel, durationLabel } = mod;
+const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation } = mod;
 
 function role(org, start, end) {
   return { org, sector: 'Private', start, end };
@@ -79,4 +79,26 @@ function role(org, start, end) {
   assert.equal(durationLabel(acmeTenures[1].start, acmeTenures[1].end), '1 yr 1 mo');
 }
 
-console.log('ok — career-pathway grouping/duration checks passed');
+// ── Case 3: phaseDateViolation — phase-vs-cohort validation ─────────────────
+{
+  // 2024+ cohort: a Post-Fellowship role dated before the cohort year is invalid.
+  assert.ok(phaseDateViolation('Post-Fellowship', '2023-06', 'January 2024'), 'pre-cohort Post-Fellowship role should be flagged');
+  // Same year as cohort is fine — cutoff is January, the earliest month, so
+  // nothing in the cohort year itself can be "before" it.
+  assert.equal(phaseDateViolation('Post-Fellowship', '2024', 'January 2024'), null, 'bare cohort-year start should not be flagged');
+  assert.equal(phaseDateViolation('Post-Fellowship', '2025-03', 'January 2024'), null, 'a later role should not be flagged');
+
+  // Mirror case: a Pre-Fellowship role dated during/after the cohort year is invalid.
+  assert.ok(phaseDateViolation('Pre-Fellowship', '2024-01', 'January 2024'), 'same-year Pre-Fellowship role should be flagged');
+  assert.equal(phaseDateViolation('Pre-Fellowship', '2023-12', 'January 2024'), null, 'a genuinely earlier role should not be flagged');
+
+  // Pre-2024 cohorts: the rule is skipped entirely (could be January or June).
+  assert.equal(phaseDateViolation('Post-Fellowship', '2018-01', 'June 2019'), null, 'pre-2024 cohorts should never be checked');
+
+  // Untouched phases and unparseable inputs are always fine.
+  assert.equal(phaseDateViolation('Fellowship', '2020-01', 'January 2024'), null, 'Fellowship phase is not checked');
+  assert.equal(phaseDateViolation('Post-Fellowship', '', 'January 2024'), null, 'no start date means nothing to check');
+  assert.equal(phaseDateViolation('Post-Fellowship', '2020-01', ''), null, 'no cohort means nothing to check');
+}
+
+console.log('ok — career-pathway grouping/duration/phase-date checks passed');

@@ -75,6 +75,55 @@ can be reordered freely and no redeploy is needed after editing the sheet.
 - **Past post-fellowship roles** earn partial credit, so an alum who has since
   moved on still surfaces for the path they took earlier
 
+#### Pathway & sector taxonomy
+The 9 target/realized pathways, with the definition used for tagging and
+derivation:
+
+| Pathway | Definition |
+|---|---|
+| Stay in Congress | Continues on the Hill — personal office, committee, or leadership staff. |
+| Think Tank | Policy research role at a think tank or research institute. |
+| Executive Branch | Agency role, political appointment, or detail in the executive branch. |
+| Law School | Pursuing a JD or other graduate legal study. |
+| Private Sector | Industry role — engineering, product, or government affairs at a company. |
+| Academia | Faculty, research, or graduate study track. |
+| Elected Office | Running for or serving in elected office. |
+| Civil Society/Nonprofit | Advocacy, civic tech, or nonprofit policy role. |
+| State & Local Government | Non-elected role in state, city, or county government — agency, governor's or mayor's office, or legislative staff. |
+
+Each pathway maps to a broad **Sector** (`Government`, `Policy/Think
+Tank/Nonprofit`, `Private`, `Academia`, `Other`) for the sector-match scoring
+signal (see below). Two pathways deliberately map to no sector, so targeting
+them never earns that bonus — though an exact pathway match still scores +3
+on its own:
+- **Law School** — a student isn't employed in any of the five sectors.
+- **State & Local Government** — the Sector taxonomy has no state/local
+  bucket, so a state or city employee is recorded under the single
+  `Government` sector, which the scoring split (below) reads as *federal*
+  Executive Branch. Awarding the sector bonus here would hand +2 to every
+  federal agency alum for a fellow aiming at city hall.
+
+`Other` is the flip side of the same idea: it's a real, selectable sector for
+roles that genuinely don't fit the rest, but no pathway maps to it — so an
+alum whose sector is `Other` can never earn the sector-match bonus either.
+"Unclassifiable" isn't evidence of fitting any particular target pathway.
+
+**Academia vs. Policy/Think Tank/Nonprofit** is the distinction people
+actually get stuck on tagging, since plenty of research organizations are
+legally nonprofits. The taxonomy's own definitions settle it:
+- **Academia** = *"Faculty, research, or graduate study track"* — research in
+  general, not just teaching.
+- **Think Tank** and **Civil Society/Nonprofit** (both → Policy/Think
+  Tank/Nonprofit sector) are specifically *policy* research and advocacy —
+  not research broadly.
+
+So a university-affiliated research lab doing technical or scientific (not
+policy) research — a University Affiliated Research Center or FFRDC, e.g.
+Johns Hopkins Applied Physics Laboratory, MIT Lincoln Laboratory, or Draper —
+is **Academia**, not Policy/Think Tank/Nonprofit, even though it's a
+nonprofit and even when the role isn't teaching-focused. University
+affiliation and research mission outweigh nonprofit tax status here.
+
 #### How matching scores
 | Signal | Points |
 |---|---|

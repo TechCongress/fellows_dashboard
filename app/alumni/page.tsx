@@ -269,7 +269,7 @@ function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alum
           )}
           {tab === 'background' && (
             <div className="space-y-6">
-              <CareerHistorySection personId={alumni.id} personName={alumni.name} />
+              <CareerHistorySection personId={alumni.id} personName={alumni.name} cohort={alumni.cohort} />
               {alumni.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{alumni.prior_role}</p></div>}
               {alumni.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{alumni.education}</p></div>}
               {alumni.notes && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Notes</h3><div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 leading-relaxed">{alumni.notes}</div></div>}

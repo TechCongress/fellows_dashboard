@@ -607,3 +607,62 @@ export function totalDurationLabel(roles: { start: string; end: string }[], span
   if (rem) parts.push(`${rem} mo${rem > 1 ? 's' : ''}`);
   return parts.join(' ');
 }
+
+// ── Phase-vs-cohort validation ────────────────────────────────────────────────
+
+/**
+ * Cohorts from this year onward always start in January, which is what makes
+ * `phaseDateViolation` below possible: before this, a cohort could start in
+ * January OR June, and the cohort label alone doesn't reliably say which — so
+ * the check is skipped entirely for anyone earlier than this.
+ */
+export const PHASE_DATE_RULE_MIN_COHORT_YEAR = 2024;
+
+/** The year a cohort string represents, or null if it can't be read. Handles
+ * both "Month Year" ("January 2026") and a bare "Year" ("2019") — the same
+ * shapes parseCohortDate (lib/helpers.ts) accepts. */
+function cohortYear(cohort: string): number | null {
+  const m = (cohort || '').trim().match(/(\d{4})/);
+  return m ? Number(m[1]) : null;
+}
+
+/** The year a career-history Start value falls in, or null if unparseable.
+ * Works for both "YYYY-MM" and a bare "YYYY". */
+function startYearOf(start: string): number | null {
+  const m = (start || '').trim().match(/^(\d{4})/);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Catches a role tagged on the wrong side of the fellowship: a
+ * "Post-Fellowship" job that actually predates it, or a "Pre-Fellowship" job
+ * dated during or after it. Only enforced for PHASE_DATE_RULE_MIN_COHORT_YEAR+
+ * cohorts — see that constant for why earlier ones are skipped entirely.
+ *
+ * The comparison is year-only, not month-level, which is deliberate: every
+ * covered cohort starts in January — the first month of the year — so any
+ * month within the cohort year already counts as "during or after" the
+ * fellowship began. That sidesteps a Start value that's only a bare year
+ * (month unknown): the year alone is enough to place it on the right side of
+ * the line, with no need to know which month.
+ *
+ * Returns a human-readable reason the row is invalid, or null if it's fine
+ * (including whenever the rule doesn't apply at all — phase isn't
+ * Pre/Post-Fellowship, the cohort or start date can't be read, or the cohort
+ * predates the rule).
+ */
+export function phaseDateViolation(phase: string, start: string, cohort: string): string | null {
+  if (phase !== 'Post-Fellowship' && phase !== 'Pre-Fellowship') return null;
+  const cYear = cohortYear(cohort);
+  if (cYear == null || cYear < PHASE_DATE_RULE_MIN_COHORT_YEAR) return null;
+  const sYear = startYearOf(start);
+  if (sYear == null) return null;
+
+  if (phase === 'Post-Fellowship' && sYear < cYear) {
+    return `Starts in ${sYear}, before this person's ${cYear} cohort began — that can't be Post-Fellowship.`;
+  }
+  if (phase === 'Pre-Fellowship' && sYear >= cYear) {
+    return `Starts in ${sYear}, during or after this person's ${cYear} cohort — that can't be Pre-Fellowship.`;
+  }
+  return null;
+}
