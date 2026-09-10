@@ -16,7 +16,7 @@
  */
 
 import { CareerHistoryEntry } from '@/types';
-import { SECTOR_POLICY, normalizeSector, sortHistory } from '@/lib/career-pathway';
+import { SECTOR_POLICY, isGovernmentSector, normalizeSector, sortHistory } from '@/lib/career-pathway';
 
 // ── Patterns ─────────────────────────────────────────────────────────────────
 
@@ -181,7 +181,16 @@ export function derivePathwayFromRole(role: {
   const student = firstMatch(LAW_STUDENT_TITLE, title);
   if (student) return { pathway: 'Law School', source: 'title', matchedOn: student, role: at };
 
-  if (sector === 'Government') {
+  if (isGovernmentSector(sector)) {
+    // An explicit branch tag is a stronger signal than guessing from org/title
+    // text, so it short-circuits straight to the matching pathway rather than
+    // running the heuristics below. Judicial Branch has no pathway of its own
+    // yet, and plain "Government" (branch unspecified) has nothing to
+    // short-circuit to either — both fall through to the org/title guesses.
+    if (sector === 'Government – Legislative Branch') return { pathway: 'Stay in Congress', source: 'sector', matchedOn: sector, role: at };
+    if (sector === 'Government – Executive Branch') return { pathway: 'Executive Branch', source: 'sector', matchedOn: sector, role: at };
+    if (sector === 'Government – State/Local') return { pathway: 'State & Local Government', source: 'sector', matchedOn: sector, role: at };
+
     // Sub-national first — see the note on STATE_LOCAL_ORG. Almost every state
     // or city marker also matches a federal pattern.
     const local = firstMatch(STATE_LOCAL_ORG, org) || firstMatch(STATE_LOCAL_ORG, title);

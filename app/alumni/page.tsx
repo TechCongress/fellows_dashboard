@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Alumni, Accomplishment } from '@/types';
 import { parseCohortDate } from '@/lib/helpers';
-import { SECTOR_POLICY } from '@/lib/career-pathway';
+import { SECTOR_POLICY, GOVERNMENT_BRANCHES, isGovernmentSector } from '@/lib/career-pathway';
 import { CareerHistorySection } from '@/components/career-history';
 import { AlumniPathwayTab } from '@/components/pathway-ui';
 
@@ -14,11 +14,25 @@ const PARTY_BG: Record<string, string> = {
   Independent: 'bg-purple-500', 'Institutional Office': 'bg-slate-500',
 };
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
-  Government:           { bg: 'bg-blue-100',    text: 'text-blue-800' },
+  Government:                            { bg: 'bg-blue-100',   text: 'text-blue-800' },
+  'Government – Legislative Branch':     { bg: 'bg-sky-100',    text: 'text-sky-800' },
+  'Government – Executive Branch':       { bg: 'bg-teal-100',   text: 'text-teal-800' },
+  'Government – Judicial Branch':        { bg: 'bg-violet-100', text: 'text-violet-800' },
+  'Government – State/Local':            { bg: 'bg-pink-100',   text: 'text-pink-800' },
   [SECTOR_POLICY]:      { bg: 'bg-cyan-100',    text: 'text-cyan-800' },
   Academia:             { bg: 'bg-purple-100',  text: 'text-purple-800' },
   Private:              { bg: 'bg-orange-100',  text: 'text-orange-800' },
   Other:                { bg: 'bg-slate-100',   text: 'text-slate-700' },
+};
+// Colors for the "By Government Branch" breakdown chart — a superset of the
+// main SECTOR_HEX below, since that chart rolls every branch up into one
+// "Government" slice and this one exists specifically to break it back out.
+const GOV_BRANCH_HEX: Record<string, string> = {
+  Government: '#3b82f6',
+  'Government – Legislative Branch': '#0ea5e9',
+  'Government – Executive Branch': '#14b8a6',
+  'Government – Judicial Branch': '#8b5cf6',
+  'Government – State/Local': '#ec4899',
 };
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
@@ -421,7 +435,7 @@ function AlumniForm({ alumni, onClose, onSaved }: { alumni?: Alumni; onClose: ()
             <div><label className="text-xs font-medium text-gray-600">Chamber</label>
               <Select value={form.chamber || ''} onChange={v => set('chamber', v)} options={['', 'Senate', 'House', 'Executive Branch']} /></div>
             <div><label className="text-xs font-medium text-gray-600">Sector</label>
-              <Select value={form.sector || ''} onChange={v => set('sector', v)} options={['', 'Government', SECTOR_POLICY, 'Academia', 'Private', 'Other']} /></div>
+              <Select value={form.sector || ''} onChange={v => set('sector', v)} options={['', 'Government', ...GOVERNMENT_BRANCHES, SECTOR_POLICY, 'Academia', 'Private', 'Other']} /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-medium text-gray-600">Office Served</label><input value={form.office_served || ''} onChange={e => set('office_served', e.target.value)} placeholder="e.g., Sen. Maria Cantwell (D-WA)" className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
@@ -464,7 +478,9 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
 
   const stats = useMemo(() => ({
     total: alumni.length,
-    govt: alumni.filter(a => a.sector === 'Government').length,
+    // Rolled up across every branch, plain "Government" included — matches
+    // the "By Sector" chart below, which keeps a single Government slice.
+    govt: alumni.filter(a => isGovernmentSector(a.sector)).length,
     private: alumni.filter(a => a.sector === 'Private').length,
     nonprofit: alumni.filter(a => a.sector === SECTOR_POLICY).length,
     academia: alumni.filter(a => a.sector === 'Academia').length,
@@ -472,13 +488,20 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
   }), [alumni]);
 
   const charts = useMemo(() => {
-    const party: Record<string, number> = {}, type: Record<string, number> = {}, sector: Record<string, number> = {};
+    const party: Record<string, number> = {}, type: Record<string, number> = {}, sector: Record<string, number> = {}, govBranch: Record<string, number> = {};
     alumni.forEach(a => {
       (a.party || '').split(',').map(p => p.trim()).filter(Boolean).forEach(p => { party[p] = (party[p] || 0) + 1; });
       (a.fellow_types || []).forEach(ft => { const l = ftLabel(ft); type[l] = (type[l] || 0) + 1; });
-      const s = a.sector || 'Unknown'; sector[s] = (sector[s] || 0) + 1;
+      // "By Sector" stays exactly as it always has — every Government branch
+      // rolls up into one slice, same as the stat card above.
+      const s = isGovernmentSector(a.sector) ? 'Government' : (a.sector || 'Unknown');
+      sector[s] = (sector[s] || 0) + 1;
+      // The breakdown chart is scoped to Government alumni only, bucketed by
+      // their specific branch — plain "Government" (branch unspecified) is
+      // its own slice here rather than being folded into one of the four.
+      if (isGovernmentSector(a.sector)) { const b = a.sector || 'Government'; govBranch[b] = (govBranch[b] || 0) + 1; }
     });
-    return { party, type, sector };
+    return { party, type, sector, govBranch };
   }, [alumni]);
 
   const cohorts = useMemo(() =>
@@ -489,7 +512,8 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
     let list = [...alumni];
     if (search) { const q = search.toLowerCase(); list = list.filter(a => a.name.toLowerCase().includes(q) || (a.office_served || '').toLowerCase().includes(q) || (a.current_role || '').toLowerCase().includes(q)); }
     if (typeFilter !== 'All Types') list = list.filter(a => a.fellow_types.includes(typeFilter));
-    if (sectorFilter !== 'All Sectors') list = list.filter(a => a.sector === sectorFilter);
+    if (sectorFilter === 'Government') list = list.filter(a => isGovernmentSector(a.sector));
+    else if (sectorFilter !== 'All Sectors') list = list.filter(a => a.sector === sectorFilter);
     if (partyFilter !== 'All Parties') list = list.filter(a => a.party === partyFilter);
     if (chamberFilter !== 'All Chambers') list = list.filter(a => a.chamber === chamberFilter);
     if (cohortFilter !== 'All Cohorts') list = list.filter(a => a.cohort === cohortFilter);
@@ -515,16 +539,17 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <MiniPie title="By Party" data={charts.party} colors={PARTY_HEX} />
         <MiniPie title="By Fellow Type" data={charts.type} colors={TYPE_HEX} />
         <MiniPie title="By Sector" data={charts.sector} colors={SECTOR_HEX} />
+        <MiniPie title="By Government Branch" data={charts.govBranch} colors={GOV_BRANCH_HEX} />
       </div>
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 space-y-3">
         <div className="grid grid-cols-5 gap-3">
           <input type="text" placeholder="Search name, org, or office…" value={search} onChange={e => setSearch(e.target.value)} className="col-span-2 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
           <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', ...FELLOW_TYPE_OPTIONS]} />
-          <Select value={sectorFilter} onChange={setSectorFilter} options={['All Sectors', 'Government', SECTOR_POLICY, 'Academia', 'Private', 'Other']} />
+          <Select value={sectorFilter} onChange={setSectorFilter} options={['All Sectors', 'Government', ...GOVERNMENT_BRANCHES, SECTOR_POLICY, 'Academia', 'Private', 'Other']} />
           <Select value={partyFilter} onChange={setPartyFilter} options={['All Parties', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} />
         </div>
         <div className="grid grid-cols-5 gap-3">
