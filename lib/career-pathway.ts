@@ -555,3 +555,55 @@ export function durationLabel(start: string, end: string): string {
   if (rem) parts.push(`${rem} mo${rem > 1 ? 's' : ''}`);
   return parts.join(' ');
 }
+
+/**
+ * Month count for a single start/end pair, mirroring durationLabel's precise
+ * (both months known) path exactly. Null when there isn't enough precision
+ * (a bare year on either end) to count months.
+ */
+function preciseMonths(start: string, end: string): number | null {
+  const sMatch = start.match(/^(\d{4})(?:-(\d{2}))?$/);
+  if (!sMatch || !sMatch[2]) return null;
+  const sy = Number(sMatch[1]);
+  const sm = Number(sMatch[2]);
+
+  let ey: number;
+  let em: number;
+  if (end) {
+    const eMatch = end.match(/^(\d{4})(?:-(\d{2}))?$/);
+    if (!eMatch || !eMatch[2]) return null;
+    ey = Number(eMatch[1]);
+    em = Number(eMatch[2]);
+  } else {
+    const now = new Date();
+    ey = now.getFullYear();
+    em = now.getMonth() + 1;
+  }
+
+  return Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
+}
+
+/**
+ * Total time actually spent across a set of roles at one organization — the
+ * sum of each role's own duration, not the span from the first role's start
+ * to the last role's end. Two summer internships a year apart at the same
+ * employer should read as "6 mos", not "1 yr 3 mos" (which would silently
+ * count the gap in between as time spent there).
+ *
+ * Falls back to the plain start→end span (via durationLabel) when any role's
+ * dates are too imprecise (a bare year) to sum in months.
+ */
+export function totalDurationLabel(roles: { start: string; end: string }[], spanStart: string, spanEnd: string): string {
+  let totalMonths = 0;
+  for (const role of roles) {
+    const months = preciseMonths(role.start, role.end);
+    if (months == null) return durationLabel(spanStart, spanEnd);
+    totalMonths += months;
+  }
+  const years = Math.floor(totalMonths / 12);
+  const rem = totalMonths % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} yr${years > 1 ? 's' : ''}`);
+  if (rem) parts.push(`${rem} mo${rem > 1 ? 's' : ''}`);
+  return parts.join(' ');
+}
