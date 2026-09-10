@@ -20,6 +20,7 @@ import {
   groupByOrganization,
   phaseStyle,
   sortHistory,
+  totalDurationLabel,
 } from '@/lib/career-pathway';
 
 type DraftEntry = Pick<CareerHistoryEntry, 'phase' | 'title' | 'org' | 'sector' | 'start' | 'end' | 'notes'>;
@@ -84,7 +85,9 @@ function TenureItem({ tenure }: { tenure: OrgTenure<CareerHistoryEntry> }) {
   // The spine already shows the latest phase, so the block styling follows it.
   const latest = tenure.roles[tenure.roles.length - 1];
   const s = phaseStyle(latest.phase);
-  const span = durationLabel(tenure.start, tenure.end);
+  // Sum of each role's own time, not the first-start-to-last-end span — two
+  // summer internships a year apart shouldn't count the gap as time worked.
+  const span = totalDurationLabel(tenure.roles, tenure.start, tenure.end);
   return (
     <div className={`flex-1 min-w-0 rounded-lg border px-4 py-2.5 ${s.cardBg} ${s.cardBorder}`}>
       <div className="flex items-baseline justify-between gap-3">
