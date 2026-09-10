@@ -95,6 +95,10 @@ export interface CareerHistoryEntry {
   start: string;          // "YYYY-MM", or "YYYY" when the exact month isn't known
   end: string;            // "YYYY-MM"/"YYYY", or '' when ongoing (Phase = Current)
   notes: string;
+  // Unpaid role (board seat, campaign volunteer, pro bono work, etc.). Excluded
+  // from pathway derivation — see deriveAlumniPathways — so an unpaid
+  // commitment can't outweigh or stand in for someone's actual paid work.
+  is_volunteer: boolean;
 }
 
 export type CareerPhase = 'Pre-Fellowship' | 'Fellowship' | 'Post-Fellowship' | 'Current';

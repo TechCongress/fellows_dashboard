@@ -74,6 +74,10 @@ can be reordered freely and no redeploy is needed after editing the sheet.
   never silently masking a bad rule
 - **Past post-fellowship roles** earn partial credit, so an alum who has since
   moved on still surfaces for the path they took earlier
+- **Volunteer-tagged roles are ignored entirely** — an unpaid board seat or
+  campaign-volunteer stint isn't necessarily the direction someone's career
+  actually took, so it can't become their derived pathway, current or prior,
+  even if it's their only `Current`-phase row
 
 #### Pathway & sector taxonomy
 The 9 target/realized pathways, with the definition used for tagging and
@@ -310,13 +314,20 @@ One row per person, fellows and alumni together. Expected headers:
 
 One row per role. Expected headers:
 
-`ID · Name · Order · Phase · Organization · Title · Sector · Start Date · End Date · Notes`
+`ID · Name · Order · Phase · Organization · Title · Volunteer Position? · Sector · Start Date · End Date · Notes`
 
 - **ID** must match the alum's ID on the Alumni tab — this is the join key
 - **Order** is rewritten as 1, 2, 3… on every save as a same-month tie-breaker;
   there's no Order field in the UI and you never need to type one
 - **Start / End Date** — `2024-09` is canonical; `2024-09-01`, `9/2024`, and
   `Sep 2024` all read correctly. A Current-phase row's end date is cleared
+- **Volunteer Position?** — `TRUE`/`FALSE`, checked via the "Unpaid / volunteer role"
+  checkbox in the editor. Marks an unpaid commitment (a board seat, campaign
+  volunteering, pro bono work) as distinct from paid roles. If this column
+  doesn't exist yet, every role just reads as not-volunteer — nothing errors
+  or goes read-only, same as any other missing column on this tab. Volunteer
+  roles are excluded from Career Pathway derivation entirely (see below), so
+  an unpaid commitment can't outweigh or stand in for someone's actual work
 
 ### Who owns sheet formatting
 
