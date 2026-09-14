@@ -81,7 +81,7 @@ export interface Alumni {
 
 /**
  * One role in a person's career trajectory. Long/tidy format: one row per
- * role on the "Alumni Career History" sheet tab, many rows per person.
+ * role on the "Career History" sheet tab, many rows per person.
  */
 export interface CareerHistoryEntry {
   person_id: string;      // joins to Alumni.id / Fellow.id (column A: "ID")

@@ -161,9 +161,11 @@ A free-text note per person, saved to the `Notes` column of their row on the
 Career Pathways Engine tab. Appears on the Career Pathway tab for both fellows
 and alumni.
 
-### Alumni career history
-A long-format **Alumni Career History** tab — one row per role — replaces the
-single "Current Role" snapshot as the source of truth.
+### Career history
+A long-format **Career History** tab — one row per role — replaces the single
+"Current Role" snapshot as the source of truth. Shared by Fellows and Alumni:
+a fellow's own career history lives on the same tab, under the same ID, and
+carries over automatically once they move to Alumni.
 
 - Full editor on each alum's profile: add, edit, reorder, and delete roles
 - Each role carries a phase: Pre-Fellowship, Fellowship, Post-Fellowship, or
@@ -302,7 +304,7 @@ git push --set-upstream origin feature-name
 
 ## Google Sheets Structure
 
-The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Alumni Career History**.
+The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Career History**.
 
 Missing tabs and missing columns degrade gracefully: the feature goes read-only
 and the dashboard shows an amber note naming the exact column to add, rather than
@@ -335,9 +337,9 @@ One row per person, fellows and alumni together. Expected headers:
 - **Last Updated** — stamped automatically as `MM/DD/YYYY` on every write
 - A person's row is **created automatically** the first time they're tagged
 
-### Alumni Career History tab
+### Career History tab
 
-One row per role. Expected headers:
+One row per role, shared by Fellows and Alumni. Expected headers:
 
 `ID · Name · Order · Phase · Organization · Title · Volunteer Position? · Primary Role? · Sector · Start Date · End Date · Notes`
 

@@ -35,7 +35,8 @@ Match quality is bounded entirely by how many alumni get tagged here. The
 fellow's Career Pathway tab reports the count ("12 of 84 alumni are tagged") so
 you can see that ratio improving.
 
-## 3. Alumni Career History tab — already created ✅
+## 3. Career History tab — already created ✅
+(renamed from "Alumni Career History" — same tab, code updated to match)
 
 The code reads and writes it as-is. It expects these headers (row 1 or row 2 —
 a "do not edit" banner row above them is fine and gets skipped automatically):
@@ -307,7 +308,7 @@ To finish the migration whenever it's convenient:
    dropdown's allowed values. Do this *first* — otherwise rows the dashboard
    saves will get flagged as invalid entries.
 2. Find and replace any earlier label → `Policy/Think Tank/Nonprofit` on the
-   `Sector` column of the **Alumni** tab and the **Alumni Career History** tab.
+   `Sector` column of the **Alumni** tab and the **Career History** tab.
    Replace the longer `Policy/Nonprofit/Think Tank` *first* if it appears at
    all, since `Policy/Think Tank` is a prefix of the new label and a careless
    replace-all would produce `Policy/Think Tank/Nonprofit/Nonprofit`.

@@ -11,7 +11,7 @@ async function authed() {
 /**
  * GET /api/career-history?personId=...
  * Returns { available, entries, missingColumns }. `available: false` means the
- * "Alumni Career History" tab isn't in the spreadsheet yet — the UI shows a
+ * "Career History" tab isn't in the spreadsheet yet — the UI shows a
  * setup note instead of an error.
  */
 export async function GET(req: NextRequest) {
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const result = await saveCareerHistory(personId, personName || '', entries);
     if (!result.available) {
       return NextResponse.json(
-        { error: 'The "Alumni Career History" tab was not found in the spreadsheet.', available: false },
+        { error: 'The "Career History" tab was not found in the spreadsheet.', available: false },
         { status: 409 }
       );
     }
