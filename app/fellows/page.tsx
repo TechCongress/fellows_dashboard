@@ -588,8 +588,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
 
           {tab === 'background' && (
             <div className="space-y-6">
-              <CareerHistorySection personId={fellow.id} personName={fellow.name} cohort={fellow.cohort} allowCurrentPhase={false} />
-              {fellow.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{fellow.prior_role}</p></div>}
+              <CareerHistorySection personId={fellow.id} personName={fellow.name} cohort={fellow.cohort} allowCurrentPhase={false} showInferredPriorRole />
               {fellow.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{fellow.education}</p></div>}
               {fellow.notes && (
                 <div>
@@ -597,7 +596,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                   <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 leading-relaxed">{fellow.notes}</div>
                 </div>
               )}
-              {!fellow.prior_role && !fellow.education && !fellow.notes && <p className="text-sm text-gray-400">No background info on record.</p>}
+              {!fellow.education && !fellow.notes && <p className="text-sm text-gray-400">No background info on record.</p>}
             </div>
           )}
 
@@ -1186,7 +1185,6 @@ export default function FellowsPage() {
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
                 ['Last Check-in', 'last_check_in', 'text'],
-                ['Prior Role', 'prior_role', 'text'],
                 ['Education', 'education', 'text'],
                 ['Report Start Date', 'report_start_date', 'text'],
                 ['Report End Month', 'report_end_month', 'text'],
@@ -1266,7 +1264,6 @@ export default function FellowsPage() {
                 ['Cohort', 'cohort', 'text'],
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
-                ['Prior Role', 'prior_role', 'text'],
                 ['Education', 'education', 'text'],
               ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
                 <div key={field}>
