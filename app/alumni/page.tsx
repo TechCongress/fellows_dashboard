@@ -27,13 +27,26 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
 // Colors for the "By Government Branch" breakdown chart — a superset of the
 // main SECTOR_HEX below, since that chart rolls every branch up into one
 // "Government" slice and this one exists specifically to break it back out.
+// Keyed on the SHORTENED labels (govBranchLabel strips the "Government – "
+// prefix before this chart ever sees it — every label here is already
+// understood to be a government branch, so repeating "Government" on each
+// slice is just noise).
 const GOV_BRANCH_HEX: Record<string, string> = {
   Government: '#3b82f6',
-  'Government – Legislative Branch': '#0ea5e9',
-  'Government – Executive Branch': '#14b8a6',
-  'Government – Judicial Branch': '#8b5cf6',
-  'Government – State/Local': '#ec4899',
+  'Legislative Branch': '#0ea5e9',
+  'Executive Branch': '#14b8a6',
+  'Judicial Branch': '#8b5cf6',
+  'State/Local': '#ec4899',
 };
+
+/** "Government – Legislative Branch" → "Legislative Branch", for the By
+ * Government Branch chart only — everywhere else (badges, filters, the Add
+ * Alumni form) keeps the full label, since it doesn't have a chart title
+ * already saying "government" for context. */
+function govBranchLabel(sector: string): string {
+  const prefix = 'Government – ';
+  return sector.startsWith(prefix) ? sector.slice(prefix.length) : sector;
+}
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
   CIF:          { bg: 'bg-blue-100',   text: 'text-blue-800' },
@@ -499,7 +512,7 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
       // The breakdown chart is scoped to Government alumni only, bucketed by
       // their specific branch — plain "Government" (branch unspecified) is
       // its own slice here rather than being folded into one of the four.
-      if (isGovernmentSector(a.sector)) { const b = a.sector || 'Government'; govBranch[b] = (govBranch[b] || 0) + 1; }
+      if (isGovernmentSector(a.sector)) { const b = govBranchLabel(a.sector || 'Government'); govBranch[b] = (govBranch[b] || 0) + 1; }
     });
     return { party, type, sector, govBranch };
   }, [alumni]);
