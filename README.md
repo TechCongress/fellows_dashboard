@@ -174,6 +174,16 @@ single "Current Role" snapshot as the source of truth.
   three unrelated jobs
 - Start and end dates display as `MM/YYYY`
 - This history is what the pathway derivation reads
+- **A role can't be tagged on the wrong side of the fellowship** — a
+  Post-Fellowship role dated before the person's own cohort began, or a
+  Pre-Fellowship role dated during or after it, blocks Save with an
+  explanation, for both fellows and alumni. Checked by year, not exact month,
+  so it works even for a bare-year Start date. Cohorts from January 2024
+  onward always start in January, so any year other than the cohort's own is
+  enough to catch a clearly wrong entry (a Post-Fellowship role from 2012 for
+  someone whose cohort was 2017, say) — the one case this can't call either
+  way is a role from the *same* year as a pre-2024 cohort, since those could
+  have started in January or June and the label alone doesn't say which
 
 
 ---
@@ -329,7 +339,7 @@ One row per person, fellows and alumni together. Expected headers:
 
 One row per role. Expected headers:
 
-`ID · Name · Order · Phase · Organization · Title · Volunteer Position? · Sector · Start Date · End Date · Notes`
+`ID · Name · Order · Phase · Organization · Title · Volunteer Position? · Primary Role? · Sector · Start Date · End Date · Notes`
 
 - **ID** must match the alum's ID on the Alumni tab — this is the join key
 - **Order** is rewritten as 1, 2, 3… on every save as a same-month tie-breaker;
@@ -343,6 +353,15 @@ One row per role. Expected headers:
   or goes read-only, same as any other missing column on this tab. Volunteer
   roles are excluded from Career Pathway derivation entirely (see below), so
   an unpaid commitment can't outweigh or stand in for someone's actual work
+- **Primary Role?** — `TRUE`/`FALSE`, checked via the "Feature this as their
+  primary current role" checkbox in the editor. Only meaningful on a
+  `Current`-phase row — the checkbox itself only appears there — and only
+  matters at all when a person holds more than one concurrent Current role,
+  which the app has always allowed as valid data. **At most one can be
+  checked at a time**: marking a second Current role Primary blocks Save (and
+  the same save-from-a-direct-API-call route) with an explicit error, rather
+  than silently picking one. Volunteer roles never count toward this check —
+  same reasoning as everywhere else volunteer is excluded
 
 ### Who owns sheet formatting
 

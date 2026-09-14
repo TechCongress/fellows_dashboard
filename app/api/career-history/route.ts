@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCareerHistory, saveCareerHistory } from '@/lib/sheets';
-import { phaseDateViolation } from '@/lib/career-pathway';
+import { phaseDateViolation, primaryRoleConflict } from '@/lib/career-pathway';
 
 async function authed() {
   const store = await cookies();
@@ -35,6 +35,8 @@ export async function GET(req: NextRequest) {
  * `cohort` is used only to re-run phaseDateViolation server-side — the same
  * check the editor already blocks Save on — so a role tagged on the wrong
  * side of the fellowship can't slip in through a direct API call either.
+ * Same reasoning for primaryRoleConflict: more than one Current role marked
+ * Primary is rejected here too, not just nagged about in the editor.
  */
 export async function POST(req: NextRequest) {
   if (!(await authed())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -47,6 +49,13 @@ export async function POST(req: NextRequest) {
       .map((e) => phaseDateViolation(e?.phase, e?.start, cohort || ''))
       .find((v) => v);
     if (violation) return NextResponse.json({ error: violation }, { status: 400 });
+
+    if (primaryRoleConflict(entries)) {
+      return NextResponse.json(
+        { error: 'More than one current role is marked Primary — only one can be featured.' },
+        { status: 400 }
+      );
+    }
 
     const result = await saveCareerHistory(personId, personName || '', entries);
     if (!result.available) {

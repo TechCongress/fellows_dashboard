@@ -37,7 +37,7 @@ try {
   unlinkSync(tmpPath);
 }
 
-const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation, inferredPriorRole } = mod;
+const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation, inferredPriorRole, primaryRoleConflict } = mod;
 
 function role(org, start, end) {
   return { org, sector: 'Private', start, end };
@@ -92,8 +92,15 @@ function role(org, start, end) {
   assert.ok(phaseDateViolation('Pre-Fellowship', '2024-01', 'January 2024'), 'same-year Pre-Fellowship role should be flagged');
   assert.equal(phaseDateViolation('Pre-Fellowship', '2023-12', 'January 2024'), null, 'a genuinely earlier role should not be flagged');
 
-  // Pre-2024 cohorts: the rule is skipped entirely (could be January or June).
-  assert.equal(phaseDateViolation('Post-Fellowship', '2018-01', 'June 2019'), null, 'pre-2024 cohorts should never be checked');
+  // Pre-2024 cohorts: only the genuinely ambiguous SAME-YEAR case is skipped
+  // (unknown whether the cutoff was January or June that year). A different
+  // year is unambiguous either way, so it's still caught — this is the real
+  // bug this fixed: a 2012 Post-Fellowship role for a 2017-cohort alum.
+  assert.equal(phaseDateViolation('Post-Fellowship', '2019-03', 'June 2019'), null, 'same-year role for a pre-2024 cohort is genuinely ambiguous (Jan or June cutoff) and should not be flagged');
+  assert.ok(phaseDateViolation('Post-Fellowship', '2012', '2017'), 'a role from a clearly earlier year should still be flagged even for a pre-2024 cohort (the real Christopher Soghoian case: 2012 role, 2017 cohort)');
+  assert.ok(phaseDateViolation('Post-Fellowship', '2018-01', 'June 2019'), 'a role from the year before a pre-2024 cohort should still be flagged');
+  assert.equal(phaseDateViolation('Pre-Fellowship', '2019-08', 'June 2019'), null, 'same-year Pre-Fellowship role for a pre-2024 cohort is also ambiguous and should not be flagged');
+  assert.ok(phaseDateViolation('Pre-Fellowship', '2020-01', 'June 2019'), 'a Pre-Fellowship role from clearly after a pre-2024 cohort should still be flagged');
 
   // Untouched phases and unparseable inputs are always fine.
   assert.equal(phaseDateViolation('Fellowship', '2020-01', 'January 2024'), null, 'Fellowship phase is not checked');
@@ -146,4 +153,25 @@ function role(org, start, end) {
   }
 }
 
-console.log('ok — career-pathway grouping/duration/phase-date/prior-role checks passed');
+// ── Case 5: primaryRoleConflict — at most one featured current role ────────
+{
+  function cur(title, isVolunteer, isPrimary) {
+    return { phase: 'Current', title, is_volunteer: !!isVolunteer, is_primary: !!isPrimary };
+  }
+
+  assert.equal(primaryRoleConflict([cur('A', false, true), cur('B', false, false)]), false, 'a single Primary flag should not conflict');
+  assert.equal(primaryRoleConflict([cur('A', false, true), cur('B', false, true)]), true, 'two Current roles both marked Primary should conflict');
+  assert.equal(
+    primaryRoleConflict([cur('A', false, true), cur('B', true, true)]),
+    false,
+    'a volunteer role marked Primary should not count toward the conflict — only paid Current roles compete for the slot'
+  );
+  assert.equal(primaryRoleConflict([]), false, 'no roles should not conflict');
+  assert.equal(
+    primaryRoleConflict([{ phase: 'Post-Fellowship', is_primary: true }, { phase: 'Post-Fellowship', is_primary: true }]),
+    false,
+    'Primary flags on non-Current roles should never conflict — only Current roles compete for the slot'
+  );
+}
+
+console.log('ok — career-pathway grouping/duration/phase-date/prior-role/primary-role checks passed');

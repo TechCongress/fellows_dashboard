@@ -98,6 +98,10 @@ export interface CareerHistoryEntry {
   // from pathway derivation — see deriveAlumniPathways — so an unpaid
   // commitment can't outweigh or stand in for someone's actual paid work.
   is_volunteer: boolean;
+  // Which of several concurrent Current roles to feature — only meaningful
+  // when Phase = "Current"; see primaryRoleConflict for the one-at-a-time
+  // rule this is checked against.
+  is_primary: boolean;
 }
 
 export type CareerPhase = 'Pre-Fellowship' | 'Fellowship' | 'Post-Fellowship' | 'Current';

@@ -21,11 +21,12 @@ import {
   inferredPriorRole,
   phaseDateViolation,
   phaseStyle,
+  primaryRoleConflict,
   sortHistory,
   totalDurationLabel,
 } from '@/lib/career-pathway';
 
-type DraftEntry = Pick<CareerHistoryEntry, 'phase' | 'title' | 'org' | 'sector' | 'start' | 'end' | 'notes' | 'is_volunteer'>;
+type DraftEntry = Pick<CareerHistoryEntry, 'phase' | 'title' | 'org' | 'sector' | 'start' | 'end' | 'notes' | 'is_volunteer' | 'is_primary'>;
 
 const BLANK_ROW: DraftEntry = {
   phase: 'Post-Fellowship',
@@ -36,6 +37,7 @@ const BLANK_ROW: DraftEntry = {
   end: '',
   notes: '',
   is_volunteer: false,
+  is_primary: false,
 };
 
 // ── Timeline (read view) ─────────────────────────────────────────────────────
@@ -249,6 +251,7 @@ function EditorRow({
   index,
   cohort,
   allowCurrentPhase,
+  primaryConflict,
   onChange,
   onRemove,
 }: {
@@ -256,6 +259,7 @@ function EditorRow({
   index: number;
   cohort: string;
   allowCurrentPhase: boolean;
+  primaryConflict: boolean;
   onChange: (i: number, patch: Partial<DraftEntry>) => void;
   onRemove: (i: number) => void;
 }) {
@@ -265,6 +269,10 @@ function EditorRow({
   // rather than silently mismatching it; just don't offer it for a fresh pick.
   const phaseOptions = allowCurrentPhase || isCurrent ? CAREER_PHASES : CAREER_PHASES.filter((p) => p !== 'Current');
   const violation = phaseDateViolation(entry.phase, entry.start, cohort);
+  // primaryConflict is section-wide (true whenever 2+ rows conflict) — only
+  // surface it on a row that's actually part of the conflict (checked and
+  // Current), not on every other Current row that has nothing to do with it.
+  const primaryIssue = isCurrent && entry.is_primary && primaryConflict;
   const fieldBase = 'px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-400';
   const field = `mt-1 w-full ${fieldBase}`;
   const label = 'block text-[11px] font-semibold text-gray-500 uppercase tracking-wide';
@@ -323,6 +331,13 @@ function EditorRow({
           This is their current role (sets Phase to &ldquo;Current&rdquo; and clears the end date)
         </label>
       )}
+      {isCurrent && (
+        <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <input type="checkbox" className="rounded" checked={!!entry.is_primary}
+            onChange={(e) => onChange(index, { is_primary: e.target.checked })} />
+          Feature this as their primary current role (only one can be checked)
+        </label>
+      )}
       <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
         <input type="checkbox" className="rounded" checked={!!entry.is_volunteer}
           onChange={(e) => onChange(index, { is_volunteer: e.target.checked })} />
@@ -331,6 +346,11 @@ function EditorRow({
       {violation && (
         <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
           ⚠️ {violation}
+        </p>
+      )}
+      {primaryIssue && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
+          ⚠️ More than one current role is marked Primary — only one can be featured. Uncheck all but one.
         </p>
       )}
       <div className="flex items-center justify-between gap-3 pt-0.5">
@@ -383,8 +403,8 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
   function startEdit() {
     setToast('');
     setError('');
-    setDraft(sortHistory(entries).map(({ phase, title, org, sector, start, end, notes, is_volunteer }) => ({
-      phase, title, org, sector: sector || 'Government', start, end, notes, is_volunteer,
+    setDraft(sortHistory(entries).map(({ phase, title, org, sector, start, end, notes, is_volunteer, is_primary }) => ({
+      phase, title, org, sector: sector || 'Government', start, end, notes, is_volunteer, is_primary,
     })));
     setEditing(true);
   }
@@ -398,6 +418,10 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
   // error, not a judgment call. See phaseDateViolation for what's checked
   // and why it's cohort-gated.
   const hasViolation = draft.some((e) => phaseDateViolation(e.phase, e.start, cohort));
+  // Same reasoning as hasViolation: two roles both marked Primary is an
+  // unresolvable conflict (only one can be featured), not something to save
+  // and sort out later.
+  const hasPrimaryConflict = primaryRoleConflict(draft);
 
   async function save() {
     setSaving(true);
@@ -445,7 +469,7 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
       {!available && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
           No <strong>Alumni Career History</strong> tab found in the spreadsheet. Add a tab with that exact name and the
-          columns <em>ID, Name, Order, Phase, Organization, Title, Volunteer Position?, Sector, Start Date, End Date, Notes</em> to turn this on.
+          columns <em>ID, Name, Order, Phase, Organization, Title, Volunteer Position?, Primary Role?, Sector, Start Date, End Date, Notes</em> to turn this on.
         </p>
       )}
 
@@ -480,9 +504,10 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
           </p>
           {/* No "only one Current role" warning: fellows and alumni genuinely
               hold concurrent positions, so several Current rows is valid data,
-              not a mistake to flag. */}
+              not a mistake to flag. The one thing that IS flagged is more than
+              one of those rows being marked Primary — see hasPrimaryConflict. */}
           {draft.map((entry, i) => (
-            <EditorRow key={i} entry={entry} index={i} cohort={cohort} allowCurrentPhase={allowCurrentPhase} onChange={patchRow}
+            <EditorRow key={i} entry={entry} index={i} cohort={cohort} allowCurrentPhase={allowCurrentPhase} primaryConflict={hasPrimaryConflict} onChange={patchRow}
               onRemove={(idx) => setDraft((rows) => rows.filter((_, x) => x !== idx))} />
           ))}
           <button type="button" onClick={() => setDraft((rows) => [...rows, { ...BLANK_ROW }])}
@@ -494,8 +519,8 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
               className="px-3.5 py-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors">
               Cancel
             </button>
-            <button type="button" onClick={save} disabled={saving || hasViolation}
-              title={hasViolation ? 'Fix the flagged role(s) above before saving' : ''}
+            <button type="button" onClick={save} disabled={saving || hasViolation || hasPrimaryConflict}
+              title={hasViolation || hasPrimaryConflict ? 'Fix the flagged role(s) above before saving' : ''}
               className="px-3.5 py-1.5 text-sm font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
