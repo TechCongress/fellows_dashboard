@@ -39,10 +39,10 @@ const BLANK_ROW: DraftEntry = {
 
 // ── Timeline (read view) ─────────────────────────────────────────────────────
 
-function PhaseLegend() {
+function PhaseLegend({ phases }: { phases: readonly CareerPhase[] }) {
   return (
     <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-3">
-      {CAREER_PHASES.map((p) => (
+      {phases.map((p) => (
         <span key={p} className="inline-flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full ${phaseStyle(p).dot}`} />
           {p}
@@ -247,16 +247,22 @@ function EditorRow({
   entry,
   index,
   cohort,
+  allowCurrentPhase,
   onChange,
   onRemove,
 }: {
   entry: DraftEntry;
   index: number;
   cohort: string;
+  allowCurrentPhase: boolean;
   onChange: (i: number, patch: Partial<DraftEntry>) => void;
   onRemove: (i: number) => void;
 }) {
   const isCurrent = entry.phase === 'Current';
+  // Keep "Current" selectable if the row already has it — from before this
+  // restriction existed, say — so the dropdown still shows the real value
+  // rather than silently mismatching it; just don't offer it for a fresh pick.
+  const phaseOptions = allowCurrentPhase || isCurrent ? CAREER_PHASES : CAREER_PHASES.filter((p) => p !== 'Current');
   const violation = phaseDateViolation(entry.phase, entry.start, cohort);
   const fieldBase = 'px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white disabled:bg-gray-100 disabled:text-gray-400';
   const field = `mt-1 w-full ${fieldBase}`;
@@ -289,7 +295,7 @@ function EditorRow({
               // "Current" means ongoing, so the end date clears with it.
               onChange(index, phase === 'Current' ? { phase, end: '' } : { phase });
             }}>
-            {CAREER_PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
+            {phaseOptions.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div>
@@ -307,13 +313,15 @@ function EditorRow({
           </div>
         </div>
       </div>
-      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-        <input type="checkbox" className="rounded" checked={isCurrent}
-          onChange={(e) => onChange(index, e.target.checked
-            ? { phase: 'Current', end: '' }
-            : { phase: 'Post-Fellowship' })} />
-        This is their current role (sets Phase to &ldquo;Current&rdquo; and clears the end date)
-      </label>
+      {allowCurrentPhase && (
+        <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <input type="checkbox" className="rounded" checked={isCurrent}
+            onChange={(e) => onChange(index, e.target.checked
+              ? { phase: 'Current', end: '' }
+              : { phase: 'Post-Fellowship' })} />
+          This is their current role (sets Phase to &ldquo;Current&rdquo; and clears the end date)
+        </label>
+      )}
       <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
         <input type="checkbox" className="rounded" checked={!!entry.is_volunteer}
           onChange={(e) => onChange(index, { is_volunteer: e.target.checked })} />
@@ -337,7 +345,11 @@ function EditorRow({
 
 // ── Section (fetch + view/edit toggle) ───────────────────────────────────────
 
-export function CareerHistorySection({ personId, personName, cohort }: { personId: string; personName: string; cohort: string }) {
+export function CareerHistorySection({ personId, personName, cohort, allowCurrentPhase = true }: { personId: string; personName: string; cohort: string; allowCurrentPhase?: boolean }) {
+  // A still-active fellow's "current" role is just the fellowship itself
+  // (Phase = "Fellowship") — Current is meant for an alum's ongoing
+  // post-program job, so the Fellows page opts out of offering it at all.
+  const phaseOptions = allowCurrentPhase ? CAREER_PHASES : CAREER_PHASES.filter((p) => p !== 'Current');
   const [entries, setEntries] = useState<CareerHistoryEntry[]>([]);
   const [available, setAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -436,7 +448,7 @@ export function CareerHistorySection({ personId, personName, cohort }: { personI
       {available && !loading && !editing && (
         entries.length > 0 ? (
           <>
-            <PhaseLegend />
+            <PhaseLegend phases={phaseOptions} />
             <CareerTimeline entries={entries} />
           </>
         ) : (
@@ -456,7 +468,7 @@ export function CareerHistorySection({ personId, personName, cohort }: { personI
               hold concurrent positions, so several Current rows is valid data,
               not a mistake to flag. */}
           {draft.map((entry, i) => (
-            <EditorRow key={i} entry={entry} index={i} cohort={cohort} onChange={patchRow}
+            <EditorRow key={i} entry={entry} index={i} cohort={cohort} allowCurrentPhase={allowCurrentPhase} onChange={patchRow}
               onRemove={(idx) => setDraft((rows) => rows.filter((_, x) => x !== idx))} />
           ))}
           <button type="button" onClick={() => setDraft((rows) => [...rows, { ...BLANK_ROW }])}
