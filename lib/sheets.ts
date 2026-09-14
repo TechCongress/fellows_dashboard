@@ -1342,11 +1342,16 @@ export async function saveCareerHistory(
     return row;
   };
 
-  // 1-indexed sheet rows currently belonging to this person
+  // 1-indexed sheet rows currently belonging to this person, plus the last
+  // row ANYWHERE in the tab that has a real ID — used below to anchor new
+  // appends. Same single pass, no extra read.
   const idCol = shape.cols.id;
   const existingRowNums: number[] = [];
+  let lastDataRow = shape.headerRow + 1; // falls back to the header row itself if the tab has no data yet
   for (let i = shape.headerRow + 1; i < rows.length; i++) {
-    if ((rows[i]?.[idCol] || '').trim() === personId) existingRowNums.push(i + 1);
+    const id = (rows[i]?.[idCol] || '').trim();
+    if (id === personId) existingRowNums.push(i + 1);
+    if (id) lastDataRow = i + 1;
   }
 
   const sheets = await getSheetsClient();
@@ -1367,15 +1372,27 @@ export async function saveCareerHistory(
 
   const toAppend = clean.slice(overwriteCount).map(buildRow);
   if (toAppend.length > 0) {
-    await sheets.spreadsheets.values.append({
+    // A plain values.update to an explicit row range — not values.append.
+    // append does its own "find the table" scan, and it turns out passing it
+    // a narrow anchor range does NOT stop that scan from continuing forward
+    // past the anchor: it still treats any later non-blank cell as more of
+    // the same table, including a checkbox column pre-filled to FALSE across
+    // a huge "reserved" range further down the sheet — even where every
+    // other cell in those rows is genuinely empty (confirmed by testing:
+    // anchoring to row 307 still landed new data at row 2079). That's the
+    // exact bug that happened, twice. update has no table-detection at all —
+    // it writes to precisely the rows it's told to and nowhere else — so
+    // this is deterministic regardless of whatever stray formatting exists
+    // elsewhere in the sheet, present or future. It still lands in existing
+    // formatted rows when there are any at that position (same reasoning as
+    // the old insertDataOption: 'OVERWRITE' choice), and the Sheets API
+    // grows the grid automatically if the target rows don't exist yet.
+    const startRow = lastDataRow + 1;
+    const endRow = startRow + toAppend.length - 1;
+    await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: CAREER_HISTORY_SHEET,
+      range: `${CAREER_HISTORY_SHEET}!A${startRow}:${lastCol}${endRow}`,
       valueInputOption: 'USER_ENTERED',
-      // Deliberately NOT insertDataOption: 'INSERT_ROWS'. Inserted rows don't
-      // inherit data validation or formatting, which is what made written
-      // phases land as plain text instead of dropdown selections. Overwriting
-      // the existing empty rows instead means new data lands in cells that
-      // already carry the sheet's dropdowns, colours, and formatting.
       requestBody: { values: toAppend },
     });
   }
