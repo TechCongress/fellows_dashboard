@@ -730,3 +730,27 @@ export function primaryRoleConflict<T extends { phase: string; is_volunteer?: bo
 ): boolean {
   return entries.filter((e) => e.phase === 'Current' && !e.is_volunteer && e.is_primary).length > 1;
 }
+
+/**
+ * Which of a person's Current, non-volunteer roles to treat as their
+ * headline current role, when they hold more than one concurrently. An
+ * explicit "Primary Role?" flag wins when exactly one is set; otherwise
+ * falls back to the most recently-started Current role — usually the more
+ * relevant one, with no staff action required for the common
+ * single-current-role case.
+ *
+ * primaryRoleConflict (above) is what keeps this from ever seeing two roles
+ * both marked Primary for the same person — that state is rejected at save
+ * time — so this never has to arbitrate between them.
+ *
+ * Returns null when there's no Current, non-volunteer role at all.
+ */
+export function primaryCurrentRole<T extends { phase: string; is_volunteer?: boolean; is_primary?: boolean; start: string; order?: number }>(
+  entries: T[]
+): T | null {
+  const current = sortHistory(entries).filter((e) => e.phase === 'Current' && !e.is_volunteer);
+  if (current.length === 0) return null;
+  const primary = current.filter((e) => e.is_primary);
+  if (primary.length === 1) return primary[0];
+  return current[current.length - 1];
+}

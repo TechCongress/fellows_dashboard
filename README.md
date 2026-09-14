@@ -36,6 +36,16 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
   State/Local branch options), Policy/Think Tank/Nonprofit, Private, Academia,
   Other — a "By Sector" chart keeps a single Government slice, alongside a
   second "By Government Branch" chart that breaks that slice back out
+- **"By Government Branch" reads Career History, not the Alumni tab's own
+  Sector field** — unlike every other sector-based stat, chart, filter, and
+  badge on this page, which all read `Sector` on the Alumni tab directly. It's
+  based on each alum's *featured Current role* (see Primary Role above): the
+  one marked `Primary Role?` if exactly one is, otherwise their most
+  recently-started `Current`-phase role, with volunteer roles never eligible.
+  An alum with no Career History yet — or none of it marked `Current` —
+  doesn't appear on this chart, even if their Alumni-tab Sector says
+  Government, so this chart's total can legitimately be smaller than the
+  Government count on the stat card
 - Engagement tracking via "Last Engaged" date and engagement notes
 - Filter by fellow type, sector, party, chamber, and cohort
 
