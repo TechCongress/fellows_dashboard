@@ -544,7 +544,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             editingSection === 'placement' ? (
               <div className="max-w-md space-y-3">
                 <EditRow label="Office"><input type="text" value={sectionForm.office || ''} onChange={e => setSectionForm(f => ({ ...f, office: e.target.value }))} className={editInputClass} /></EditRow>
-                <EditRow label="Chamber"><Select value={sectionForm.chamber || ''} onChange={v => setSectionForm(f => ({ ...f, chamber: v }))} options={['House', 'Senate', 'Executive Branch']} /></EditRow>
+                <EditRow label="Chamber"><Select value={sectionForm.chamber || ''} onChange={v => setSectionForm(f => ({ ...f, chamber: v }))} options={['', 'House', 'Senate', 'Executive Branch']} /></EditRow>
                 <EditRow label="Party"><Select value={sectionForm.party || ''} onChange={v => setSectionForm(f => ({ ...f, party: v }))} options={['Democrat', 'Republican', 'Independent', 'Institutional Office']} /></EditRow>
                 <EditRow label="Supervisor"><input type="text" value={sectionForm.supervisor_email || ''} onChange={e => setSectionForm(f => ({ ...f, supervisor_email: e.target.value }))} className={editInputClass} /></EditRow>
                 <EditRow label="Start Date"><input type="text" value={sectionForm.start_date || ''} onChange={e => setSectionForm(f => ({ ...f, start_date: e.target.value }))} className={editInputClass} /></EditRow>
@@ -961,7 +961,10 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
       className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white text-gray-700">
-      {options.map(o => <option key={o}>{o}</option>)}
+      {/* An empty-string option has no built-in value attribute otherwise — the
+          browser falls back to using its text content, so "" would render with
+          no value at all. Explicit value="" keeps it a real, selectable blank. */}
+      {options.map(o => <option key={o} value={o}>{o || '—'}</option>)}
     </select>
   );
 }
@@ -976,7 +979,10 @@ export default function FellowsPage() {
   const [modalTab, setModalTab] = useState<ModalTab>('onboarding');
   const [modalEditSection, setModalEditSection] = useState<'contact' | 'placement' | null>(null);
   const [showAddFellow, setShowAddFellow] = useState(false);
-  const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
+  // No default Chamber: fellows are added as soon as they accept an offer,
+  // before they have a placement — forcing a guess here would just get
+  // silently wrong data into the sheet until someone remembers to fix it.
+  const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat' });
   const [addFellowSaving, setAddFellowSaving] = useState(false);
   const [editFellow, setEditFellow] = useState<Fellow | null>(null);
   const [editFellowForm, setEditFellowForm] = useState<Partial<Fellow>>({});
@@ -1201,6 +1207,7 @@ export default function FellowsPage() {
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
                   <select value={(editFellowForm[field] as string) || ''} onChange={e => setEditFellowForm(f => ({ ...f, [field]: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+                    {field === 'chamber' && <option value="">Not yet placed</option>}
                     {options.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
@@ -1278,6 +1285,7 @@ export default function FellowsPage() {
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
                   <select value={(addFellowForm[field] as string) || ''} onChange={e => setAddFellowForm(f => ({ ...f, [field]: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+                    {field === 'chamber' && <option value="">Not yet placed</option>}
                     {options.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
