@@ -651,10 +651,10 @@ export function totalDurationLabel(roles: { start: string; end: string }[], span
 // ── Phase-vs-cohort validation ────────────────────────────────────────────────
 
 /**
- * Cohorts from this year onward always start in January, which is what makes
- * `phaseDateViolation` below possible: before this, a cohort could start in
- * January OR June, and the cohort label alone doesn't reliably say which — so
- * the check is skipped entirely for anyone earlier than this.
+ * Cohorts from this year onward always start in January. Before this, a
+ * cohort could start in January OR June, and the cohort label alone doesn't
+ * reliably say which — see phaseDateViolation for exactly what that
+ * ambiguity does and doesn't block.
  */
 export const PHASE_DATE_RULE_MIN_COHORT_YEAR = 2024;
 
@@ -676,27 +676,35 @@ function startYearOf(start: string): number | null {
 /**
  * Catches a role tagged on the wrong side of the fellowship: a
  * "Post-Fellowship" job that actually predates it, or a "Pre-Fellowship" job
- * dated during or after it. Only enforced for PHASE_DATE_RULE_MIN_COHORT_YEAR+
- * cohorts — see that constant for why earlier ones are skipped entirely.
+ * dated during or after it.
  *
- * The comparison is year-only, not month-level, which is deliberate: every
- * covered cohort starts in January — the first month of the year — so any
- * month within the cohort year already counts as "during or after" the
- * fellowship began. That sidesteps a Start value that's only a bare year
- * (month unknown): the year alone is enough to place it on the right side of
- * the line, with no need to know which month.
+ * The comparison is year-only, not month-level — deliberate, and it's what
+ * makes this safe to run even for a cohort whose exact start month isn't
+ * known (anything before PHASE_DATE_RULE_MIN_COHORT_YEAR could be January or
+ * June): a role from a YEAR OTHER than the cohort's is unambiguous either
+ * way — January and June of the cohort year both fall within that one year,
+ * so an earlier or later year is on the same side of the line regardless of
+ * which month the fellowship actually started in. The only case that's
+ * genuinely ambiguous is a role dated the SAME year as an unknown-month
+ * cohort — there's no way to tell whether it landed before or after a cutoff
+ * that could be Jan or June — so only that one case is skipped, not the
+ * cohort's entire history.
  *
  * Returns a human-readable reason the row is invalid, or null if it's fine
  * (including whenever the rule doesn't apply at all — phase isn't
- * Pre/Post-Fellowship, the cohort or start date can't be read, or the cohort
- * predates the rule).
+ * Pre/Post-Fellowship, the cohort or start date can't be read, or it falls in
+ * that one ambiguous same-year/unknown-month case).
  */
 export function phaseDateViolation(phase: string, start: string, cohort: string): string | null {
   if (phase !== 'Post-Fellowship' && phase !== 'Pre-Fellowship') return null;
   const cYear = cohortYear(cohort);
-  if (cYear == null || cYear < PHASE_DATE_RULE_MIN_COHORT_YEAR) return null;
+  if (cYear == null) return null;
   const sYear = startYearOf(start);
   if (sYear == null) return null;
+
+  // The one genuinely ambiguous case: an unknown-month cohort with a role
+  // from that exact same year. Everything else is decidable from year alone.
+  if (cYear < PHASE_DATE_RULE_MIN_COHORT_YEAR && sYear === cYear) return null;
 
   if (phase === 'Post-Fellowship' && sYear < cYear) {
     return `Starts in ${sYear}, before this person's ${cYear} cohort began — that can't be Post-Fellowship.`;
@@ -705,4 +713,20 @@ export function phaseDateViolation(phase: string, start: string, cohort: string)
     return `Starts in ${sYear}, during or after this person's ${cYear} cohort — that can't be Pre-Fellowship.`;
   }
   return null;
+}
+
+/**
+ * True when more than one of this person's Current, non-volunteer roles is
+ * marked "Primary Role?" — at most one role can be featured as their
+ * headline current role, so two (or more) marked at once is a conflict to
+ * fix by hand rather than something to silently resolve by picking one.
+ *
+ * Volunteer roles never count toward this, same reasoning as everywhere else
+ * volunteer is excluded: an unpaid commitment isn't in competition with paid
+ * work for "which one represents this person right now."
+ */
+export function primaryRoleConflict<T extends { phase: string; is_volunteer?: boolean; is_primary?: boolean }>(
+  entries: T[]
+): boolean {
+  return entries.filter((e) => e.phase === 'Current' && !e.is_volunteer && e.is_primary).length > 1;
 }

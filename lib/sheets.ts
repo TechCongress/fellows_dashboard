@@ -1104,6 +1104,7 @@ const HISTORY_HEADER_ALIASES: Record<string, string[]> = {
   org:    ['Organization', 'Org', 'Employer'],
   title:  ['Title', 'Role', 'Position'],
   volunteer: ['Volunteer Position?', 'Volunteer Position', 'Volunteer', 'Unpaid/Volunteer', 'Is Volunteer'],
+  primary: ['Primary Role?', 'Primary Role', 'Is Primary'],
   sector: ['Sector'],
   start:  ['Start Date', 'Start'],
   end:    ['End Date', 'End'],
@@ -1152,6 +1153,7 @@ function rowToEntry(row: string[], cols: Record<string, number>): CareerHistoryE
     end: normalizeMonth(at('end')),
     notes: at('notes'),
     is_volunteer: toBool(at('volunteer')),
+    is_primary: toBool(at('primary')),
   };
 }
 
@@ -1308,6 +1310,9 @@ export async function saveCareerHistory(
         end: e.phase === 'Current' ? '' : normalizeMonth(e.end || ''),
         notes: (e.notes || '').trim(),
         is_volunteer: !!e.is_volunteer,
+        // Only meaningful on a Current row — cleared on anything else so a
+        // stray flag left over from an old phase change can't linger.
+        is_primary: e.phase === 'Current' && !!e.is_primary,
         order: 0,
       }))
   ).map((e, i) => ({ ...e, order: i + 1 }));
@@ -1330,6 +1335,7 @@ export async function saveCareerHistory(
     put('end', toSheetMonth(e.end));
     put('notes', e.notes);
     put('volunteer', e.is_volunteer ? 'TRUE' : 'FALSE');
+    put('primary', e.is_primary ? 'TRUE' : 'FALSE');
     return row;
   };
 
