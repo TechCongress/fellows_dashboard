@@ -353,6 +353,11 @@ function EditorRow({
           ⚠️ More than one current role is marked Primary — only one can be featured. Uncheck all but one.
         </p>
       )}
+      <div>
+        <label className={label}>Notes</label>
+        <textarea className={`${field} resize-y`} rows={2} value={entry.notes} placeholder="Optional — context that doesn't fit the fields above"
+          onChange={(e) => onChange(index, { notes: e.target.value })} />
+      </div>
       <div className="flex items-center justify-between gap-3 pt-0.5">
         <span className="text-[11px] text-gray-400">Position in the timeline is set automatically by Start date.</span>
         <button type="button" onClick={() => onRemove(index)}
