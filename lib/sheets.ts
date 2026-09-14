@@ -1085,11 +1085,14 @@ export async function saveAttendanceBatch(
   return true;
 }
 
-// ── Alumni Career History ────────────────────────────────────────────────────
+// ── Career History ───────────────────────────────────────────────────────────
+// Renamed from "Alumni Career History" — it's shared by both Fellows and
+// Alumni (a fellow's own row uses the same tab, joined by the same ID), and
+// the old name read like it was alumni-only.
 
-export const CAREER_HISTORY_SHEET = 'Alumni Career History';
+export const CAREER_HISTORY_SHEET = 'Career History';
 
-// ── Alumni Career History tab ────────────────────────────────────────────────
+// ── Career History tab ───────────────────────────────────────────────────────
 
 /**
  * Accepted header spellings per logical field. The tab was created by hand, so

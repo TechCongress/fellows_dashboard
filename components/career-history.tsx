@@ -468,7 +468,7 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
 
       {!available && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
-          No <strong>Alumni Career History</strong> tab found in the spreadsheet. Add a tab with that exact name and the
+          No <strong>Career History</strong> tab found in the spreadsheet. Add a tab with that exact name and the
           columns <em>ID, Name, Order, Phase, Organization, Title, Volunteer Position?, Primary Role?, Sector, Start Date, End Date, Notes</em> to turn this on.
         </p>
       )}
@@ -499,7 +499,7 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
       {available && editing && (
         <div className="space-y-3">
           <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
-            Saving writes these rows to the <strong>Alumni Career History</strong> tab. There is no Order field to fill in —
+            Saving writes these rows to the <strong>Career History</strong> tab. There is no Order field to fill in —
             the timeline re-sorts itself by each role&rsquo;s Start date on save.
           </p>
           {/* No "only one Current role" warning: fellows and alumni genuinely
