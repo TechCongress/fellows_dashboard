@@ -15,7 +15,6 @@ export interface Fellow {
   start_date: string;
   end_date: string;
   last_check_in: string;
-  prior_role: string;
   education: string;
   notes: string;
   requires_monthly_reports: boolean;

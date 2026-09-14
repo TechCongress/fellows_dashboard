@@ -61,7 +61,10 @@ export async function POST(req: NextRequest) {
           chamber: fellow.chamber,
           party: fellow.party,
           education: fellow.education,
-          prior_role: fellow.prior_role,
+          // No prior_role carry-over: Fellows no longer collect it (their
+          // pre-fellowship history lives in Career History instead) — Alumni
+          // still has the field, it just starts blank here rather than
+          // pre-filled from a source that no longer exists.
           notes: fellow.notes,
           current_role: body.current_role || '',
           sector: body.sector || '',

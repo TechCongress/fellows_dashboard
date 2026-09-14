@@ -18,6 +18,7 @@ import {
   dateRangeLabel,
   durationLabel,
   groupByOrganization,
+  inferredPriorRole,
   phaseDateViolation,
   phaseStyle,
   sortHistory,
@@ -345,7 +346,7 @@ function EditorRow({
 
 // ── Section (fetch + view/edit toggle) ───────────────────────────────────────
 
-export function CareerHistorySection({ personId, personName, cohort, allowCurrentPhase = true }: { personId: string; personName: string; cohort: string; allowCurrentPhase?: boolean }) {
+export function CareerHistorySection({ personId, personName, cohort, allowCurrentPhase = true, showInferredPriorRole = false }: { personId: string; personName: string; cohort: string; allowCurrentPhase?: boolean; showInferredPriorRole?: boolean }) {
   // A still-active fellow's "current" role is just the fellowship itself
   // (Phase = "Fellowship") — Current is meant for an alum's ongoing
   // post-program job, so the Fellows page opts out of offering it at all.
@@ -373,6 +374,11 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
   }, [personId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Only computed for the Fellows page (Prior Role no longer being a typed
+  // field there — see inferredPriorRole for the exact rule) so Alumni, which
+  // still has its own hand-typed Prior Role, doesn't show a second one.
+  const priorRole = showInferredPriorRole ? inferredPriorRole(entries) : null;
 
   function startEdit() {
     setToast('');
@@ -450,6 +456,14 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
           <>
             <PhaseLegend phases={phaseOptions} />
             <CareerTimeline entries={entries} />
+            {priorRole && (
+              <div className="mt-4">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3>
+                <p className="text-sm text-gray-700">
+                  {priorRole.title || '—'}{priorRole.org ? ` @ ${priorRole.org}` : ''}
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <p className="text-sm text-gray-400">

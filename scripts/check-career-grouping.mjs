@@ -37,7 +37,7 @@ try {
   unlinkSync(tmpPath);
 }
 
-const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation } = mod;
+const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation, inferredPriorRole } = mod;
 
 function role(org, start, end) {
   return { org, sector: 'Private', start, end };
@@ -101,4 +101,49 @@ function role(org, start, end) {
   assert.equal(phaseDateViolation('Post-Fellowship', '2020-01', ''), null, 'no cohort means nothing to check');
 }
 
-console.log('ok — career-pathway grouping/duration/phase-date checks passed');
+// ── Case 4: inferredPriorRole — the role immediately before the fellowship ──
+{
+  function entry(phase, title, org, start, isVolunteer) {
+    return { phase, title, org, start, end: '', is_volunteer: !!isVolunteer };
+  }
+
+  // Two Pre-Fellowship roles, no volunteer roles: the later one (closer to
+  // the fellowship) wins, not just the most recent role of any phase.
+  {
+    const history = [
+      entry('Pre-Fellowship', 'Intern', 'Old Org', '2020-06'),
+      entry('Pre-Fellowship', 'Analyst', 'Recent Org', '2022-01'),
+      entry('Fellowship', 'CIF', 'TechCongress', '2024-01'),
+    ];
+    const prior = inferredPriorRole(history);
+    assert.equal(prior?.title, 'Analyst', 'should pick the LATER Pre-Fellowship role, not the first one');
+  }
+
+  // A volunteer role right before the fellowship is skipped in favor of the
+  // last PAID Pre-Fellowship role, even though the volunteer one is later.
+  {
+    const history = [
+      entry('Pre-Fellowship', 'Analyst', 'Paid Job', '2022-01'),
+      entry('Pre-Fellowship', 'Board Member', 'Nonprofit', '2023-06', true),
+      entry('Fellowship', 'CIF', 'TechCongress', '2024-01'),
+    ];
+    const prior = inferredPriorRole(history);
+    assert.equal(prior?.title, 'Analyst', 'a later volunteer role should not be picked over the last paid one');
+  }
+
+  // Every Pre-Fellowship role is volunteer, or there's no career history at
+  // all: nothing to infer, so null rather than a misleading guess.
+  {
+    assert.equal(inferredPriorRole([entry('Pre-Fellowship', 'Board Member', 'Nonprofit', '2023-06', true)]), null, 'all-volunteer history should infer nothing');
+    assert.equal(inferredPriorRole([]), null, 'no history should infer nothing');
+  }
+
+  // Post-Fellowship and Current roles never count as "prior" — only
+  // Pre-Fellowship does.
+  {
+    const history = [entry('Post-Fellowship', 'Should Not Count', 'Org', '2025-01')];
+    assert.equal(inferredPriorRole(history), null, 'a Post-Fellowship role should never be inferred as Prior Role');
+  }
+}
+
+console.log('ok — career-pathway grouping/duration/phase-date/prior-role checks passed');

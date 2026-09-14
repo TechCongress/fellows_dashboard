@@ -486,6 +486,27 @@ export function currentRolesOf<T extends { phase: string }>(entries: T[]): T[] {
   return entries.filter((e) => e.phase === 'Current');
 }
 
+/**
+ * "Prior Role" for a still-active fellow, inferred from Career History rather
+ * than hand-typed: the role immediately before the fellowship — the most
+ * recent Pre-Fellowship entry, by Start date, same ordering sortHistory
+ * always uses.
+ *
+ * Volunteer/unpaid roles are excluded. Someone's last PAID job before the
+ * fellowship is what "prior role" means here; an unpaid board seat or
+ * campaign-volunteer stint they also held right before starting isn't a
+ * substitute for it, even if it's chronologically the very last entry.
+ *
+ * Returns null when there's no qualifying entry — no career history at all,
+ * or every Pre-Fellowship entry is volunteer-tagged.
+ */
+export function inferredPriorRole<T extends { phase: string; is_volunteer?: boolean; start: string; order?: number }>(
+  entries: T[]
+): T | null {
+  const candidates = sortHistory(entries).filter((e) => e.phase === 'Pre-Fellowship' && !e.is_volunteer);
+  return candidates.length > 0 ? candidates[candidates.length - 1] : null;
+}
+
 /** A run of consecutive roles at one organization — a single tenure. */
 export interface OrgTenure<T> {
   org: string;
