@@ -378,6 +378,20 @@ note that valid values are guaranteed regardless — the API clamps every write 
 the fixed taxonomies, so nothing off-list can reach the sheet even without
 validation enforcing it.
 
+**One caveat specifically for checkbox columns** (`Volunteer Position?`,
+`Primary Role?`): applying Sheets' checkbox validation to a range sets every
+cell in it to `FALSE` immediately, even ones that were completely blank
+before — so a checkbox column applied generously over rows that don't have
+real data yet leaves a long stretch that *looks* empty at a glance but isn't,
+technically, blank. This actually broke new-row placement once already: the
+old code let the Sheets API scan the whole tab to guess where to append new
+rows, and that scan treated the `FALSE`-filled stretch as more of "the
+table," silently placing new entries thousands of rows past where a human
+scrolling down would assume the data ended. New rows now go to an explicit,
+computed position (the row right after the last one with a real ID) instead
+of relying on that scan — so this specific failure mode shouldn't recur even
+if a future checkbox column gets applied the same generous way.
+
 ### Renamed labels
 
 Renames are handled with back-compat aliases: an old value is mapped to the
