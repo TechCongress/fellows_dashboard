@@ -588,7 +588,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
 
           {tab === 'background' && (
             <div className="space-y-6">
-              <CareerHistorySection personId={fellow.id} personName={fellow.name} cohort={fellow.cohort} />
+              <CareerHistorySection personId={fellow.id} personName={fellow.name} cohort={fellow.cohort} allowCurrentPhase={false} />
               {fellow.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{fellow.prior_role}</p></div>}
               {fellow.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{fellow.education}</p></div>}
               {fellow.notes && (
