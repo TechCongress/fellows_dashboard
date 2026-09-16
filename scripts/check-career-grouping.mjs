@@ -37,7 +37,7 @@ try {
   unlinkSync(tmpPath);
 }
 
-const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation, inferredPriorRole, primaryRoleConflict } = mod;
+const { groupByOrganization, totalDurationLabel, durationLabel, phaseDateViolation, inferredPriorRole, primaryRoleConflict, primaryCurrentRole } = mod;
 
 function role(org, start, end) {
   return { org, sector: 'Private', start, end };
@@ -172,6 +172,45 @@ function role(org, start, end) {
     false,
     'Primary flags on non-Current roles should never conflict — only Current roles compete for the slot'
   );
+}
+
+// ── Case 6: primaryCurrentRole — which Current role to feature ─────────────
+{
+  function cur(title, sector, start, isVolunteer, isPrimary) {
+    return { phase: 'Current', title, sector, start, is_volunteer: !!isVolunteer, is_primary: !!isPrimary };
+  }
+
+  assert.equal(primaryCurrentRole([]), null, 'no history should feature nothing');
+
+  // Single Current role: trivially that one, no flag needed.
+  {
+    const only = cur('Policy Analyst', 'Private', '2024-01');
+    assert.equal(primaryCurrentRole([only]), only, 'a single Current role should be featured with no Primary flag needed');
+  }
+
+  // Two concurrent Current roles, no Primary flag set: falls back to the
+  // most recently-started one.
+  {
+    const older = cur('Adjunct Professor', 'Academia', '2022-09');
+    const newer = cur('Senior Policy Advisor', 'Government – Legislative Branch', '2024-03');
+    assert.equal(primaryCurrentRole([older, newer]), newer, 'with no Primary flag, the most recently-started Current role should be featured');
+  }
+
+  // An explicit Primary flag overrides the recency default, even for the
+  // older role.
+  {
+    const older = cur('Adjunct Professor', 'Academia', '2022-09', false, true);
+    const newer = cur('Senior Policy Advisor', 'Government – Legislative Branch', '2024-03');
+    assert.equal(primaryCurrentRole([older, newer]), older, 'an explicit Primary flag should win over the recency default');
+  }
+
+  // A volunteer Current role is never featured, even if it's the newest or
+  // the only one marked Primary.
+  {
+    const paid = cur('Policy Analyst', 'Private', '2023-01');
+    const volunteer = cur('Board Member', 'Policy/Think Tank/Nonprofit', '2024-06', true, true);
+    assert.equal(primaryCurrentRole([paid, volunteer]), paid, 'a volunteer Current role should never be featured, Primary flag or not');
+  }
 }
 
 console.log('ok — career-pathway grouping/duration/phase-date/prior-role/primary-role checks passed');
