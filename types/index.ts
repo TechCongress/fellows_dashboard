@@ -60,15 +60,15 @@ export interface Alumni {
   office_served: string;
   chamber: string;
   party: string;
-  current_role: string;
-  sector: string;
+  current_role: string;         // derived from Career History (featured Current role); '' if none entered
+  sector: string;               // derived: the featured Current role's sector; '' if none entered
   location: string;
   contact: boolean;             // OK to contact?
   linkedin: string;
   last_engaged: string;
   engagement_notes: string;
   notes: string;
-  prior_role: string;
+  prior_role: string;           // derived from Career History (last paid Pre-Fellowship role); '' if none entered
   education: string;
   served_on_hill: boolean;
   currently_on_hill: boolean;

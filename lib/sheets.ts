@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
 import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase, PathwayRecord } from '@/types';
-import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector, normalizePathway, MAX_POLICY_AREAS, MAX_TARGET_PATHWAYS } from '@/lib/career-pathway';
+import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector, normalizePathway, MAX_POLICY_AREAS, MAX_TARGET_PATHWAYS, primaryCurrentRole, inferredPriorRole, roleLabel } from '@/lib/career-pathway';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -519,42 +519,54 @@ export async function logStatusReport(data: {
 // ── Alumni ──────────────────────────────────────────────────────────────────
 
 export async function fetchAlumni(): Promise<Alumni[]> {
-  const [rows, pathways] = await Promise.all([
+  const [rows, pathways, careerHistory] = await Promise.all([
     getSheetValues('Alumni'),
     fetchPathwayRecords().catch(() => ({ records: {} as Record<string, PathwayRecord> })),
+    fetchCareerHistory().catch(() => ({ entries: [] as CareerHistoryEntry[] })),
   ]);
+  const historyByPerson = new Map<string, CareerHistoryEntry[]>();
+  for (const e of careerHistory.entries) {
+    const list = historyByPerson.get(e.person_id);
+    if (list) list.push(e); else historyByPerson.set(e.person_id, [e]);
+  }
   const records = rowsToObjects(rows);
-  return records.filter((r) => r['ID'] || r['Name']).map((r) => ({
-    id: r['ID'] || '',
-    name: r['Name'] || '',
-    email: r['Email'] || '',
-    phone: r['Phone Number'] || '',
-    cohort: r['Cohort'] || '',
-    fellow_types: r['Fellow Type'] ? r['Fellow Type'].split(',').map((t) => t.trim()).filter(Boolean) : [],
-    office_served: r['Office Served'] || '',
-    chamber: r['Chamber'] || '',
-    party: r['Party'] || '',
-    current_role: r['Current Role'] || '',
-    // Renamed sector labels still in the sheet are mapped to the current one on
-    // read, so badges, filters, the pie chart, and matching all agree whether
-    // or not the spreadsheet has been updated yet.
-    sector: normalizeSector(r['Sector'] || ''),
-    location: r['Location'] || '',
-    contact: r['Contact?'] ? toBool(r['Contact?']) : true,
-    linkedin: r['LinkedIn'] || '',
-    last_engaged: r['Last Engaged'] || '',
-    engagement_notes: r['Engagement Notes'] || '',
-    notes: r['Notes'] || '',
-    prior_role: r['Prior Role'] || '',
-    education: r['Education'] || '',
-    served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
-    currently_on_hill: toBool(r['Currently on the Hill?']),
-    policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
-    // Only ever the manual override. The real realized pathway is DERIVED from
-    // career history at the point of use — see lib/pathway-derivation.ts — so
-    // there is deliberately no stored column for it.
-    realized_pathway: pathways.records[r['ID'] || '']?.pathway_override || '',
-  }));
+  return records.filter((r) => r['ID'] || r['Name']).map((r) => {
+    const history = historyByPerson.get(r['ID'] || '') || [];
+    const current = primaryCurrentRole(history);
+    return {
+      id: r['ID'] || '',
+      name: r['Name'] || '',
+      email: r['Email'] || '',
+      phone: r['Phone Number'] || '',
+      cohort: r['Cohort'] || '',
+      fellow_types: r['Fellow Type'] ? r['Fellow Type'].split(',').map((t) => t.trim()).filter(Boolean) : [],
+      office_served: r['Office Served'] || '',
+      chamber: r['Chamber'] || '',
+      party: r['Party'] || '',
+      // Current role, prior role, and sector are DERIVED from Career History,
+      // never read from the Alumni tab's old hand-typed `Current Role` /
+      // `Prior Role` / `Sector` columns — those went stale every time someone
+      // changed jobs. Sector is the featured Current role's sector. All three
+      // are blank until the alum's career history is entered.
+      current_role: roleLabel(current),
+      sector: normalizeSector(current?.sector || ''),
+      location: r['Location'] || '',
+      contact: r['Contact?'] ? toBool(r['Contact?']) : true,
+      linkedin: r['LinkedIn'] || '',
+      last_engaged: r['Last Engaged'] || '',
+      engagement_notes: r['Engagement Notes'] || '',
+      notes: r['Notes'] || '',
+      prior_role: roleLabel(inferredPriorRole(history)),
+      education: r['Education'] || '',
+      served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
+      currently_on_hill: toBool(r['Currently on the Hill?']),
+      policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
+      // Only ever the manual override. The real realized pathway is DERIVED from
+      // career history at the point of use — see lib/pathway-derivation.ts — so
+      // there is deliberately no stored column for it.
+      realized_pathway: pathways.records[r['ID'] || '']?.pathway_override || '',
+    };
+  });
 }
 
 function newId(): string {
@@ -627,11 +639,11 @@ function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
     'Office Served': d.office_served || '',
     'Chamber': d.chamber || '',
     'Education': d.education || '',
-    'Prior Role': d.prior_role || '',
-    'Current Role': d.current_role || '',
+    // No 'Prior Role' / 'Current Role' / 'Sector': all three are derived from
+    // Career History (see fetchAlumni), so the dashboard never writes them. updateAlumni
+    // leaves whatever is already in those cells alone.
     'Served on the Hill Post-fellowship?': d.served_on_hill ? 'TRUE' : 'FALSE',
     'Currently on the Hill?': d.currently_on_hill ? 'TRUE' : 'FALSE',
-    'Sector': d.sector || '',
     'Location': d.location || '',
     'Contact?': d.contact === false ? 'FALSE' : 'TRUE',
     'LinkedIn': d.linkedin || '',
@@ -675,10 +687,16 @@ export async function createAlumni(data: Partial<Alumni>, keepId?: string): Prom
 export async function updateAlumni(id: string, data: Partial<Alumni>): Promise<boolean> {
   const headers = await getAlumniHeaders();
   const map = alumniDataMap(id, data);
-  const row = headers.map(h => map[h] ?? '');
+  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data
+  const rows = await getSheetValues('Alumni');
+  const idx = rows.findIndex((r, i) => i >= 2 && r[0] === id);
+  if (idx === -1) return false;
+  const rowNum = idx + 1; // 1-indexed sheet row
+  // A column the dashboard doesn't manage (e.g. the retired Current Role /
+  // Prior Role) keeps its existing value rather than being blanked on save.
+  const existing = rows[idx];
+  const row = headers.map((h, i) => (h in map ? map[h] : existing[i] ?? ''));
   const sheets = await getSheetsClient();
-  const rowNum = await findRowById('Alumni', id);
-  if (!rowNum) return false;
   const lastCol = columnLetter(headers.length - 1); // e.g. 21 cols → U
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),

@@ -507,6 +507,19 @@ export function inferredPriorRole<T extends { phase: string; is_volunteer?: bool
   return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
+/**
+ * One role as a single line — "Senior Advisor at OSTP". Reads naturally both
+ * on a card and inside the intro email ("Given your work as …"). Either half
+ * may be blank in the sheet, so each is dropped cleanly rather than leaving a
+ * dangling "at".
+ */
+export function roleLabel(entry: { title?: string; org?: string } | null | undefined): string {
+  if (!entry) return '';
+  const title = (entry.title || '').trim();
+  const org = (entry.org || '').trim();
+  return title && org ? `${title} at ${org}` : title || org;
+}
+
 /** A run of consecutive roles at one organization — a single tenure. */
 export interface OrgTenure<T> {
   org: string;

@@ -22,6 +22,7 @@ import {
   phaseDateViolation,
   phaseStyle,
   primaryRoleConflict,
+  roleLabel,
   sortHistory,
   totalDurationLabel,
 } from '@/lib/career-pathway';
@@ -73,7 +74,7 @@ function PhaseChip({ phase }: { phase: string }) {
 function VolunteerChip() {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800">
-      Volunteer
+      Unpaid
     </span>
   );
 }
@@ -400,9 +401,9 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
 
   useEffect(() => { load(); }, [load]);
 
-  // Only computed for the Fellows page (Prior Role no longer being a typed
-  // field there — see inferredPriorRole for the exact rule) so Alumni, which
-  // still has its own hand-typed Prior Role, doesn't show a second one.
+  // Prior Role is no longer a typed field for fellows or alumni — it's read
+  // from the history itself (see inferredPriorRole for the exact rule), so it
+  // updates the moment the history is saved.
   const priorRole = showInferredPriorRole ? inferredPriorRole(entries) : null;
 
   function startEdit() {
@@ -489,7 +490,7 @@ export function CareerHistorySection({ personId, personName, cohort, allowCurren
               <div className="mt-4">
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3>
                 <p className="text-sm text-gray-700">
-                  {priorRole.title || '—'}{priorRole.org ? ` @ ${priorRole.org}` : ''}
+                  {roleLabel(priorRole) || '—'}
                 </p>
               </div>
             )}

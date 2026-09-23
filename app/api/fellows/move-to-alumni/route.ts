@@ -9,7 +9,7 @@ async function authed() {
 
 /**
  * POST /api/fellows/move-to-alumni
- * Body: { id, current_role, sector, location }
+ * Body: { id, location }
  *
  * Moves a fellow to the Alumni tab, keeping their ID.
  *
@@ -61,13 +61,9 @@ export async function POST(req: NextRequest) {
           chamber: fellow.chamber,
           party: fellow.party,
           education: fellow.education,
-          // No prior_role carry-over: Fellows no longer collect it (their
-          // pre-fellowship history lives in Career History instead) — Alumni
-          // still has the field, it just starts blank here rather than
-          // pre-filled from a source that no longer exists.
+          // No current_role / prior_role / sector: all derived from Career
+          // History, which stays attached because the ID carries over.
           notes: fellow.notes,
-          current_role: body.current_role || '',
-          sector: body.sector || '',
           location: body.location || '',
           contact: true,
           served_on_hill: true,
