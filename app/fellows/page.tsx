@@ -986,6 +986,10 @@ export default function FellowsPage() {
   const [editFellow, setEditFellow] = useState<Fellow | null>(null);
   const [editFellowForm, setEditFellowForm] = useState<Partial<Fellow>>({});
   const [editFellowSaving, setEditFellowSaving] = useState(false);
+  // Two clicks, because there is no undo — the row is deleted from the sheet.
+  const [confirmDeleteFellow, setConfirmDeleteFellow] = useState(false);
+  const [deleteFellowSaving, setDeleteFellowSaving] = useState(false);
+  const [deleteFellowError, setDeleteFellowError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Active');
   const [typeFilter, setTypeFilter] = useState('All Types');
@@ -1163,7 +1167,7 @@ export default function FellowsPage() {
       {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)}
         onFellowUpdate={updated => { setFellows(fs => fs.map(f => f.id === updated.id ? updated : f)); setSelectedFellow(updated); }}
         initialTab={modalTab} initialEditSection={modalEditSection}
-        onEditAll={f => { setSelectedFellow(null); setEditFellow(f); setEditFellowForm({ ...f }); }} />}
+        onEditAll={f => { setSelectedFellow(null); setEditFellow(f); setEditFellowForm({ ...f }); setConfirmDeleteFellow(false); setDeleteFellowError(''); }} />}
 
       {editFellow && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -1222,25 +1226,64 @@ export default function FellowsPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => setEditFellow(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
-              <button disabled={editFellowSaving} onClick={async () => {
-                setEditFellowSaving(true);
-                try {
-                  await fetch('/api/fellows', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: editFellow.id, ...editFellowForm }),
-                  });
-                  setEditFellow(null);
-                  const res = await fetch('/api/fellows');
-                  setFellows(await res.json());
-                } finally {
-                  setEditFellowSaving(false);
-                }
-              }} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-medium">
-                {editFellowSaving ? 'Saving…' : 'Save Changes'}
-              </button>
+            {deleteFellowError && (
+              <p className="mx-6 mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteFellowError}</p>
+            )}
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3">
+              {confirmDeleteFellow ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Delete {editFellow.name}? This can&apos;t be undone.</span>
+                  <button disabled={deleteFellowSaving} onClick={async () => {
+                    setDeleteFellowSaving(true);
+                    setDeleteFellowError('');
+                    try {
+                      const res = await fetch('/api/fellows', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: editFellow.id }),
+                      });
+                      const json = await res.json().catch(() => ({}));
+                      if (!res.ok || !json.ok) {
+                        setDeleteFellowError('Could not delete. Please try again.');
+                        return;
+                      }
+                      setFellows(fs => fs.filter(f => f.id !== editFellow.id));
+                      setEditFellow(null);
+                    } catch {
+                      setDeleteFellowError('Network error — nothing was deleted.');
+                    } finally {
+                      setDeleteFellowSaving(false);
+                    }
+                  }} className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                    {deleteFellowSaving ? 'Deleting…' : 'Confirm Delete'}
+                  </button>
+                  <button onClick={() => { setConfirmDeleteFellow(false); setDeleteFellowError(''); }} className="text-sm text-gray-500 hover:text-gray-900">Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDeleteFellow(true)} className="px-3 py-1.5 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors">
+                  Delete Fellow
+                </button>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => setEditFellow(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+                <button disabled={editFellowSaving} onClick={async () => {
+                  setEditFellowSaving(true);
+                  try {
+                    await fetch('/api/fellows', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: editFellow.id, ...editFellowForm }),
+                    });
+                    setEditFellow(null);
+                    const res = await fetch('/api/fellows');
+                    setFellows(await res.json());
+                  } finally {
+                    setEditFellowSaving(false);
+                  }
+                }} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-medium">
+                  {editFellowSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
