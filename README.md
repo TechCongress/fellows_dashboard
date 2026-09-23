@@ -36,16 +36,14 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
   State/Local branch options), Policy/Think Tank/Nonprofit, Private, Academia,
   Other — a "By Sector" chart keeps a single Government slice, alongside a
   second "By Government Branch" chart that breaks that slice back out
-- **"By Government Branch" reads Career History, not the Alumni tab's own
-  Sector field** — unlike every other sector-based stat, chart, filter, and
-  badge on this page, which all read `Sector` on the Alumni tab directly. It's
-  based on each alum's *featured Current role* (see Primary Role above): the
+- **An alum's Sector is derived from Career History**, not typed in: it's the
+  sector of their *featured Current role* (see Primary Role above), meaning the
   one marked `Primary Role?` if exactly one is, otherwise their most
-  recently-started `Current`-phase role, with volunteer roles never eligible.
-  An alum with no Career History yet — or none of it marked `Current` —
-  doesn't appear on this chart, even if their Alumni-tab Sector says
-  Government, so this chart's total can legitimately be smaller than the
-  Government count on the stat card
+  recently started `Current`-phase role. Volunteer roles are never eligible.
+  Every sector stat, chart, filter, badge, and the matching all use it. An alum
+  with no Career History yet (or none marked `Current`) has a blank sector and
+  shows as "Unknown" on the By Sector chart. The Alumni tab's old `Sector`
+  column is no longer read or written
 - Engagement tracking via "Last Engaged" date and engagement notes
 - Filter by fellow type, sector, party, chamber, and cohort
 
@@ -186,12 +184,12 @@ carries over automatically once they move to Alumni.
   three unrelated jobs
 - Start and end dates display as `MM/YYYY`
 - This history is what the pathway derivation reads
-- **An alum's Current Role and Prior Role are derived from it**, not typed in.
+- **An alum's Current Role, Prior Role, and Sector are derived from it**, not typed in.
   Current role is their Primary `Current` row (or the most recently started
   one); prior role is their last paid `Pre-Fellowship` row. Both show as
   "Title at Organization" and are blank until the alum's history is entered.
-  The Alumni tab's old `Current Role` / `Prior Role` columns are no longer read
-  or written
+  Sector is the current role's sector. The Alumni tab's old `Current Role` /
+  `Prior Role` / `Sector` columns are no longer read or written
 - **A role can't be tagged on the wrong side of the fellowship** — a
   Post-Fellowship role dated before the person's own cohort began, or a
   Pre-Fellowship role dated during or after it, blocks Save with an

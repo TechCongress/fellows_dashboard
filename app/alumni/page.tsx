@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Alumni, Accomplishment, CareerHistoryEntry } from '@/types';
+import { Alumni, Accomplishment } from '@/types';
 import { parseCohortDate } from '@/lib/helpers';
-import { SECTOR_POLICY, GOVERNMENT_BRANCHES, isGovernmentSector, primaryCurrentRole } from '@/lib/career-pathway';
+import { SECTOR_POLICY, GOVERNMENT_BRANCHES, isGovernmentSector } from '@/lib/career-pathway';
 import { CareerHistorySection } from '@/components/career-history';
 import { AlumniPathwayTab } from '@/components/pathway-ui';
 
@@ -441,13 +441,11 @@ function AlumniForm({ alumni, onClose, onSaved }: { alumni?: Alumni; onClose: ()
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-medium text-gray-600">Party</label>
               <Select value={form.party || ''} onChange={v => set('party', v)} options={['', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} /></div>
             <div><label className="text-xs font-medium text-gray-600">Chamber</label>
               <Select value={form.chamber || ''} onChange={v => set('chamber', v)} options={['', 'Senate', 'House', 'Executive Branch']} /></div>
-            <div><label className="text-xs font-medium text-gray-600">Sector</label>
-              <Select value={form.sector || ''} onChange={v => set('sector', v)} options={['', 'Government', ...GOVERNMENT_BRANCHES, SECTOR_POLICY, 'Academia', 'Private', 'Other']} /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-medium text-gray-600">Office Served</label><input value={form.office_served || ''} onChange={e => set('office_served', e.target.value)} placeholder="e.g., Sen. Maria Cantwell (D-WA)" className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
@@ -477,7 +475,7 @@ function AlumniForm({ alumni, onClose, onSaved }: { alumni?: Alumni; onClose: ()
 
 // ── Tab: All Alumni ───────────────────────────────────────────────────────────
 
-function AllAlumniTab({ alumni, careerHistory, onView, onEdit }: { alumni: Alumni[]; careerHistory: CareerHistoryEntry[]; onView: (a: Alumni) => void; onEdit: (a: Alumni) => void }) {
+function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a: Alumni) => void; onEdit: (a: Alumni) => void }) {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All Types');
   const [sectorFilter, setSectorFilter] = useState('All Sectors');
@@ -485,17 +483,6 @@ function AllAlumniTab({ alumni, careerHistory, onView, onEdit }: { alumni: Alumn
   const [chamberFilter, setChamberFilter] = useState('All Chambers');
   const [cohortFilter, setCohortFilter] = useState('All Cohorts');
   const [sortBy, setSortBy] = useState('Cohort (newest first)');
-
-  // One person's entries can be spread anywhere in the bulk list, so group
-  // once rather than filtering the whole array per alum in the loop below.
-  const careerHistoryByPerson = useMemo(() => {
-    const map = new Map<string, CareerHistoryEntry[]>();
-    careerHistory.forEach((e) => {
-      const list = map.get(e.person_id);
-      if (list) list.push(e); else map.set(e.person_id, [e]);
-    });
-    return map;
-  }, [careerHistory]);
 
   const stats = useMemo(() => ({
     total: alumni.length,
@@ -517,18 +504,16 @@ function AllAlumniTab({ alumni, careerHistory, onView, onEdit }: { alumni: Alumn
       // rolls up into one slice, same as the stat card above.
       const s = isGovernmentSector(a.sector) ? 'Government' : (a.sector || 'Unknown');
       sector[s] = (sector[s] || 0) + 1;
-      // Unlike the stat card and "By Sector" above, this chart is read from
-      // Career History's Current role, not the Alumni tab's own Sector field
-      // — the two can disagree for an alum whose Alumni-tab Sector hasn't
-      // been kept in sync with what Career History actually says.
-      const currentSector = primaryCurrentRole(careerHistoryByPerson.get(a.id) || [])?.sector || '';
-      if (isGovernmentSector(currentSector)) {
-        const b = govBranchLabel(currentSector || 'Government');
+      // a.sector is the featured Current role's sector (derived server-side
+      // from Career History), so this breaks the Government slice above down
+      // by branch.
+      if (isGovernmentSector(a.sector)) {
+        const b = govBranchLabel(a.sector);
         govBranch[b] = (govBranch[b] || 0) + 1;
       }
     });
     return { party, type, sector, govBranch };
-  }, [alumni, careerHistoryByPerson]);
+  }, [alumni]);
 
   const cohorts = useMemo(() =>
     [...new Set(alumni.map(a => a.cohort).filter(Boolean))].sort((a, b) => parseCohortDate(b).getTime() - parseCohortDate(a).getTime()),
@@ -685,12 +670,6 @@ function ServedTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a: A
 
 export default function AlumniPage() {
   const [alumni, setAlumni] = useState<Alumni[]>([]);
-  // Bulk-fetched once, same call shape /api/career-history already supports
-  // for a single person (personId just omitted) — one request for everyone's
-  // history rather than one per alum. Currently used only to derive the "By
-  // Government Branch" chart's Current role; nothing else on this page reads
-  // it yet.
-  const [careerHistory, setCareerHistory] = useState<CareerHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'hill' | 'served'>('all');
   const [viewing, setViewing] = useState<Alumni | null>(null);
@@ -700,14 +679,10 @@ export default function AlumniPage() {
   const logout = useCallback(async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/'; }, []);
 
   async function load() {
-    const [alumniRes, historyRes] = await Promise.all([
-      fetch('/api/alumni'),
-      fetch('/api/career-history'),
-    ]);
-    const data = await alumniRes.json();
-    const historyData = await historyRes.json().catch(() => ({}));
+    // Role and sector fields arrive already derived from Career History —
+    // see fetchAlumni — so there's no separate history request here.
+    const data = await (await fetch('/api/alumni')).json();
     setAlumni(Array.isArray(data) ? data : []);
-    setCareerHistory(Array.isArray(historyData.entries) ? historyData.entries : []);
     setLoading(false);
   }
 
@@ -758,7 +733,7 @@ export default function AlumniPage() {
           <div className="flex items-center justify-center h-64 text-gray-400">Loading alumni…</div>
         ) : (
           <>
-            {activeTab === 'all'    && <AllAlumniTab alumni={alumni} careerHistory={careerHistory} onView={setViewing} onEdit={a => { setEditing(a); setShowForm(true); }} />}
+            {activeTab === 'all'    && <AllAlumniTab alumni={alumni} onView={setViewing} onEdit={a => { setEditing(a); setShowForm(true); }} />}
             {activeTab === 'hill'   && <OnHillTab alumni={alumni} onView={setViewing} onEdit={a => { setEditing(a); setShowForm(true); }} />}
             {activeTab === 'served' && <ServedTab alumni={alumni} onView={setViewing} onEdit={a => { setEditing(a); setShowForm(true); }} />}
           </>

@@ -519,52 +519,54 @@ export async function logStatusReport(data: {
 // ── Alumni ──────────────────────────────────────────────────────────────────
 
 export async function fetchAlumni(): Promise<Alumni[]> {
-  const [rows, pathways, history] = await Promise.all([
+  const [rows, pathways, careerHistory] = await Promise.all([
     getSheetValues('Alumni'),
     fetchPathwayRecords().catch(() => ({ records: {} as Record<string, PathwayRecord> })),
     fetchCareerHistory().catch(() => ({ entries: [] as CareerHistoryEntry[] })),
   ]);
   const historyByPerson = new Map<string, CareerHistoryEntry[]>();
-  for (const e of history.entries) {
+  for (const e of careerHistory.entries) {
     const list = historyByPerson.get(e.person_id);
     if (list) list.push(e); else historyByPerson.set(e.person_id, [e]);
   }
   const records = rowsToObjects(rows);
-  return records.filter((r) => r['ID'] || r['Name']).map((r) => ({
-    id: r['ID'] || '',
-    name: r['Name'] || '',
-    email: r['Email'] || '',
-    phone: r['Phone Number'] || '',
-    cohort: r['Cohort'] || '',
-    fellow_types: r['Fellow Type'] ? r['Fellow Type'].split(',').map((t) => t.trim()).filter(Boolean) : [],
-    office_served: r['Office Served'] || '',
-    chamber: r['Chamber'] || '',
-    party: r['Party'] || '',
-    // Current and prior role are DERIVED from Career History, never read from
-    // the Alumni tab's old hand-typed `Current Role` / `Prior Role` columns —
-    // those went stale every time someone changed jobs. Blank until the alum's
-    // career history is entered.
-    current_role: roleLabel(primaryCurrentRole(historyByPerson.get(r['ID'] || '') || [])),
-    // Renamed sector labels still in the sheet are mapped to the current one on
-    // read, so badges, filters, the pie chart, and matching all agree whether
-    // or not the spreadsheet has been updated yet.
-    sector: normalizeSector(r['Sector'] || ''),
-    location: r['Location'] || '',
-    contact: r['Contact?'] ? toBool(r['Contact?']) : true,
-    linkedin: r['LinkedIn'] || '',
-    last_engaged: r['Last Engaged'] || '',
-    engagement_notes: r['Engagement Notes'] || '',
-    notes: r['Notes'] || '',
-    prior_role: roleLabel(inferredPriorRole(historyByPerson.get(r['ID'] || '') || [])),
-    education: r['Education'] || '',
-    served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
-    currently_on_hill: toBool(r['Currently on the Hill?']),
-    policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
-    // Only ever the manual override. The real realized pathway is DERIVED from
-    // career history at the point of use — see lib/pathway-derivation.ts — so
-    // there is deliberately no stored column for it.
-    realized_pathway: pathways.records[r['ID'] || '']?.pathway_override || '',
-  }));
+  return records.filter((r) => r['ID'] || r['Name']).map((r) => {
+    const history = historyByPerson.get(r['ID'] || '') || [];
+    const current = primaryCurrentRole(history);
+    return {
+      id: r['ID'] || '',
+      name: r['Name'] || '',
+      email: r['Email'] || '',
+      phone: r['Phone Number'] || '',
+      cohort: r['Cohort'] || '',
+      fellow_types: r['Fellow Type'] ? r['Fellow Type'].split(',').map((t) => t.trim()).filter(Boolean) : [],
+      office_served: r['Office Served'] || '',
+      chamber: r['Chamber'] || '',
+      party: r['Party'] || '',
+      // Current role, prior role, and sector are DERIVED from Career History,
+      // never read from the Alumni tab's old hand-typed `Current Role` /
+      // `Prior Role` / `Sector` columns — those went stale every time someone
+      // changed jobs. Sector is the featured Current role's sector. All three
+      // are blank until the alum's career history is entered.
+      current_role: roleLabel(current),
+      sector: normalizeSector(current?.sector || ''),
+      location: r['Location'] || '',
+      contact: r['Contact?'] ? toBool(r['Contact?']) : true,
+      linkedin: r['LinkedIn'] || '',
+      last_engaged: r['Last Engaged'] || '',
+      engagement_notes: r['Engagement Notes'] || '',
+      notes: r['Notes'] || '',
+      prior_role: roleLabel(inferredPriorRole(history)),
+      education: r['Education'] || '',
+      served_on_hill: toBool(r['Served on the Hill Post-fellowship?']),
+      currently_on_hill: toBool(r['Currently on the Hill?']),
+      policy_areas: pathways.records[r['ID'] || '']?.policy_areas || [],
+      // Only ever the manual override. The real realized pathway is DERIVED from
+      // career history at the point of use — see lib/pathway-derivation.ts — so
+      // there is deliberately no stored column for it.
+      realized_pathway: pathways.records[r['ID'] || '']?.pathway_override || '',
+    };
+  });
 }
 
 function newId(): string {
@@ -637,12 +639,11 @@ function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
     'Office Served': d.office_served || '',
     'Chamber': d.chamber || '',
     'Education': d.education || '',
-    // No 'Prior Role' / 'Current Role': both are derived from Career History
-    // (see fetchAlumni), so the dashboard never writes them. updateAlumni
+    // No 'Prior Role' / 'Current Role' / 'Sector': all three are derived from
+    // Career History (see fetchAlumni), so the dashboard never writes them. updateAlumni
     // leaves whatever is already in those cells alone.
     'Served on the Hill Post-fellowship?': d.served_on_hill ? 'TRUE' : 'FALSE',
     'Currently on the Hill?': d.currently_on_hill ? 'TRUE' : 'FALSE',
-    'Sector': d.sector || '',
     'Location': d.location || '',
     'Contact?': d.contact === false ? 'FALSE' : 'TRUE',
     'LinkedIn': d.linkedin || '',

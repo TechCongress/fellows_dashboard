@@ -74,7 +74,7 @@ function PhaseChip({ phase }: { phase: string }) {
 function VolunteerChip() {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800">
-      Volunteer
+      Unpaid
     </span>
   );
 }

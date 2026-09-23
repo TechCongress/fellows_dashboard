@@ -31,8 +31,9 @@ the dashboard doesn't read them.
 
 A person's row is **created automatically** the first time they're tagged on the
 dashboard, so there's no need to add rows by hand. No changes are needed to
-`Sector`, `Currently on the Hill?`, or `Contact?` on the Alumni tab. The matching
-logic reuses all three as they are.
+`Currently on the Hill?` or `Contact?` on the Alumni tab. The matching logic
+reuses both as they are, plus each alum's sector, which is derived from their
+Career History (§3).
 
 Turns on: the tag editors on every person's **Career Pathway** tab, and both
 halves of the matching.
@@ -125,14 +126,15 @@ Notes on the columns:
   `9/2024`, and `Sep 2024` are all read correctly too. A Current-phase row's end
   date is cleared automatically.
 
-An alum's **current role** and **prior role** are derived from this tab. The
-dashboard no longer reads or writes the Alumni tab's old `Current Role` and
-`Prior Role` columns:
+An alum's **current role**, **prior role**, and **sector** are derived from this
+tab. The dashboard no longer reads or writes the Alumni tab's old
+`Current Role`, `Prior Role`, and `Sector` columns:
 
 - **Current role** is the `Phase = Current` row (the one marked Primary if
   there are several, otherwise the most recently started; volunteer roles never
   count).
 - **Prior role** is the last paid `Pre-Fellowship` row.
+- **Sector** is the current role's sector.
 
 Both are blank for anyone whose career history hasn't been entered yet. The old
 columns can be deleted from the Alumni tab whenever you like, since nothing
@@ -334,16 +336,17 @@ matching logic.
 holding a previous label — `Policy/Think Tank`, or the short-lived
 `Policy/Nonprofit/Think Tank` — is mapped to the current one the moment it's read, so
 it filters, charts, and matches identically to a row that's been updated. Rows
-also migrate themselves: saving an alum or their career history writes the new
-label back.
+also migrate themselves: saving someone's career history writes the new label
+back.
 
 To finish the migration whenever it's convenient:
 
-1. On the **Alumni** tab, add `Policy/Think Tank/Nonprofit` to the `Sector`
-   dropdown's allowed values. Do this *first* — otherwise rows the dashboard
-   saves will get flagged as invalid entries.
+1. On the **Career History** tab, add `Policy/Think Tank/Nonprofit` to the
+   `Sector` dropdown's allowed values. Do this *first* — otherwise rows the
+   dashboard saves will get flagged as invalid entries.
 2. Find and replace any earlier label → `Policy/Think Tank/Nonprofit` on the
-   `Sector` column of the **Alumni** tab and the **Career History** tab.
+   `Sector` column of the **Career History** tab. (The Alumni tab's `Sector`
+   column is no longer used.)
    Replace the longer `Policy/Nonprofit/Think Tank` *first* if it appears at
    all, since `Policy/Think Tank` is a prefix of the new label and a careless
    replace-all would produce `Policy/Think Tank/Nonprofit/Nonprofit`.

@@ -254,7 +254,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const [checkinsFetched, setCheckinsFetched] = useState(false);
   const [reportsFetched, setReportsFetched] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
-  const [moveForm, setMoveForm] = useState({ sector: '', location: '' });
+  const [moveForm, setMoveForm] = useState({ location: '' });
   const [moveSaving, setMoveSaving] = useState(false);
   const [moveDone, setMoveDone] = useState(false);
   const [moveError, setMoveError] = useState('');
@@ -898,9 +898,9 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             <>
               <div className="px-6 py-4 space-y-3">
                 <p className="text-xs text-gray-500">Pre-filled from fellow record. Add any additional info below.</p>
-                {/* No Current Role field: an alum's current role is derived from
-                    their Career History, which carries over with the move. */}
-                {([['Sector', 'sector'], ['Location', 'location']] as [string, keyof typeof moveForm][]).map(([label, field]) => (
+                {/* No Current Role or Sector field: both are derived from the
+                    alum's Career History, which carries over with the move. */}
+                {([['Location', 'location']] as [string, keyof typeof moveForm][]).map(([label, field]) => (
                   <div key={field}>
                     <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
                     <input type="text" value={moveForm[field]} onChange={e => setMoveForm(f => ({ ...f, [field]: e.target.value }))}
@@ -929,7 +929,6 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         id: fellow.id,
-                        sector: moveForm.sector,
                         location: moveForm.location,
                       }),
                     });

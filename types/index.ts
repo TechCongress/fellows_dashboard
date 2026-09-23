@@ -61,7 +61,7 @@ export interface Alumni {
   chamber: string;
   party: string;
   current_role: string;         // derived from Career History (featured Current role); '' if none entered
-  sector: string;
+  sector: string;               // derived: the featured Current role's sector; '' if none entered
   location: string;
   contact: boolean;             // OK to contact?
   linkedin: string;
