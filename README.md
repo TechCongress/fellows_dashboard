@@ -186,6 +186,12 @@ carries over automatically once they move to Alumni.
   three unrelated jobs
 - Start and end dates display as `MM/YYYY`
 - This history is what the pathway derivation reads
+- **An alum's Current Role and Prior Role are derived from it**, not typed in.
+  Current role is their Primary `Current` row (or the most recently started
+  one); prior role is their last paid `Pre-Fellowship` row. Both show as
+  "Title at Organization" and are blank until the alum's history is entered.
+  The Alumni tab's old `Current Role` / `Prior Role` columns are no longer read
+  or written
 - **A role can't be tagged on the wrong side of the fellowship** — a
   Post-Fellowship role dated before the person's own cohort began, or a
   Pre-Fellowship role dated during or after it, blocks Save with an

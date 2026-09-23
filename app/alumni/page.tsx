@@ -296,8 +296,7 @@ function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alum
           )}
           {tab === 'background' && (
             <div className="space-y-6">
-              <CareerHistorySection personId={alumni.id} personName={alumni.name} cohort={alumni.cohort} />
-              {alumni.prior_role && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Prior Role</h3><p className="text-sm text-gray-700">{alumni.prior_role}</p></div>}
+              <CareerHistorySection personId={alumni.id} personName={alumni.name} cohort={alumni.cohort} showInferredPriorRole />
               {alumni.education && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Education</h3><p className="text-sm text-gray-700">{alumni.education}</p></div>}
               {alumni.notes && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Notes</h3><div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 leading-relaxed">{alumni.notes}</div></div>}
               {alumni.location && <div><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Location</h3><p className="text-sm text-gray-700">{alumni.location}</p></div>}
@@ -452,11 +451,9 @@ function AlumniForm({ alumni, onClose, onSaved }: { alumni?: Alumni; onClose: ()
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-medium text-gray-600">Office Served</label><input value={form.office_served || ''} onChange={e => set('office_served', e.target.value)} placeholder="e.g., Sen. Maria Cantwell (D-WA)" className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
-            <div><label className="text-xs font-medium text-gray-600">Current Role</label><input value={form.current_role || ''} onChange={e => set('current_role', e.target.value)} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
             <div><label className="text-xs font-medium text-gray-600">Location</label><input value={form.location || ''} onChange={e => set('location', e.target.value)} placeholder="e.g., Washington, DC" className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
             <div><label className="text-xs font-medium text-gray-600">Last Engaged</label><input type="date" value={form.last_engaged || ''} onChange={e => set('last_engaged', e.target.value)} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
           </div>
-          <div><label className="text-xs font-medium text-gray-600">Prior Role</label><input value={form.prior_role || ''} onChange={e => set('prior_role', e.target.value)} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
           <div><label className="text-xs font-medium text-gray-600">Education</label><input value={form.education || ''} onChange={e => set('education', e.target.value)} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
           <div><label className="text-xs font-medium text-gray-600">Engagement Notes</label><textarea value={form.engagement_notes || ''} onChange={e => set('engagement_notes', e.target.value)} rows={2} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>
           <div><label className="text-xs font-medium text-gray-600">Notes</label><textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={3} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" /></div>

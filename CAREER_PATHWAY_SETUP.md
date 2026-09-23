@@ -125,10 +125,18 @@ Notes on the columns:
   `9/2024`, and `Sep 2024` are all read correctly too. A Current-phase row's end
   date is cleared automatically.
 
-`Prior Role` and `Current Role` on the main tabs can stay for now. Once this tab
-is populated, treat them as a hand-maintained snapshot rather than the source of
-truth — current role is the `Phase = Current` row, prior role is the row just
-before the Fellowship row.
+An alum's **current role** and **prior role** are derived from this tab. The
+dashboard no longer reads or writes the Alumni tab's old `Current Role` and
+`Prior Role` columns:
+
+- **Current role** is the `Phase = Current` row (the one marked Primary if
+  there are several, otherwise the most recently started; volunteer roles never
+  count).
+- **Prior role** is the last paid `Pre-Fellowship` row.
+
+Both are blank for anyone whose career history hasn't been entered yet. The old
+columns can be deleted from the Alumni tab whenever you like, since nothing
+depends on them.
 
 ---
 
