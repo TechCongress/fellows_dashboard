@@ -1308,6 +1308,8 @@ export default function FellowsPage() {
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
                 ['Education', 'education', 'text'],
+                ['Report Start Date', 'report_start_date', 'text'],
+                ['Report End Month', 'report_end_month', 'text'],
               ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
                 <div key={field}>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -1330,6 +1332,17 @@ export default function FellowsPage() {
                   </select>
                 </div>
               ))}
+              <div className="col-span-2 flex items-center gap-2">
+                <input type="checkbox" id="addReqReports" checked={!!addFellowForm.requires_monthly_reports}
+                  onChange={e => setAddFellowForm(f => ({ ...f, requires_monthly_reports: e.target.checked }))}
+                  className="rounded border-gray-300" />
+                <label htmlFor="addReqReports" className="text-sm text-gray-700">Requires monthly status reports</label>
+              </div>
+              {addFellowForm.requires_monthly_reports && !addFellowForm.report_end_month && (
+                <p className="col-span-2 -mt-2 text-xs text-amber-600">
+                  Set a Report End Month above — leaving it blank means no report months will ever be tracked for this fellow.
+                </p>
+              )}
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
                 <textarea value={addFellowForm.notes || ''} onChange={e => setAddFellowForm(f => ({ ...f, notes: e.target.value }))} rows={3}
