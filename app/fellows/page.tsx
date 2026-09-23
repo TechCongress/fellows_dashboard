@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
+import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak, CHECKIN_TYPES, todayISOET } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
@@ -252,6 +252,45 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const [loadingCheckins, setLoadingCheckins] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
   const [checkinsFetched, setCheckinsFetched] = useState(false);
+  const [showCheckinForm, setShowCheckinForm] = useState(false);
+  const [checkinForm, setCheckinForm] = useState({ date: todayISOET(), check_in_type: 'Email', staff_member: '', notes: '' });
+  const [checkinSaving, setCheckinSaving] = useState(false);
+  const [checkinError, setCheckinError] = useState('');
+  const [checkinToast, setCheckinToast] = useState('');
+
+  function openCheckinForm() {
+    setCheckinForm({ date: todayISOET(), check_in_type: 'Email', staff_member: '', notes: '' });
+    setCheckinError('');
+    setCheckinToast('');
+    setShowCheckinForm(true);
+  }
+
+  async function saveCheckin() {
+    setCheckinSaving(true);
+    setCheckinError('');
+    try {
+      const res = await fetch('/api/checkins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fellow_id: fellow.id, ...checkinForm }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkin) {
+        setCheckinError(data.error || 'Could not save the check-in. Please try again.');
+        return;
+      }
+      setCheckins(cs => [data.checkin, ...cs]);
+      // The server only moves Last Check-in forward; mirror that here so the
+      // card, badge and stats update without a reload.
+      if (data.lastCheckInUpdated && onFellowUpdate) onFellowUpdate({ ...fellow, last_check_in: data.checkin.date });
+      setShowCheckinForm(false);
+      setCheckinToast('Check-in logged.');
+    } catch {
+      setCheckinError('Network error. Please try again.');
+    } finally {
+      setCheckinSaving(false);
+    }
+  }
   const [reportsFetched, setReportsFetched] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveForm, setMoveForm] = useState({ current_role: '', sector: '', location: '' });
@@ -787,6 +826,58 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
 
           {tab === 'checkins' && (
             <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">Logging a check-in updates this fellow&rsquo;s Last Check-in date.</p>
+                {!showCheckinForm && (
+                  <button onClick={openCheckinForm}
+                    className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700">
+                    + Log Check-in
+                  </button>
+                )}
+              </div>
+              {checkinToast && !showCheckinForm && (
+                <p className="mb-3 text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg px-3 py-2">✓ {checkinToast}</p>
+              )}
+              {showCheckinForm && (
+                <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="checkin-date" className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                      <input id="checkin-date" type="date" value={checkinForm.date} max={todayISOET()}
+                        onChange={e => setCheckinForm(f => ({ ...f, date: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                    </div>
+                    <div>
+                      <label htmlFor="checkin-type" className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                      <select id="checkin-type" value={checkinForm.check_in_type}
+                        onChange={e => setCheckinForm(f => ({ ...f, check_in_type: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900">
+                        {CHECKIN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="checkin-staff" className="block text-xs font-medium text-gray-600 mb-1">Staff member</label>
+                    <input id="checkin-staff" type="text" value={checkinForm.staff_member} placeholder="Who checked in"
+                      onChange={e => setCheckinForm(f => ({ ...f, staff_member: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                  </div>
+                  <div>
+                    <label htmlFor="checkin-notes" className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                    <textarea id="checkin-notes" rows={3} value={checkinForm.notes} placeholder="What you talked about, anything to follow up on"
+                      onChange={e => setCheckinForm(f => ({ ...f, notes: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                  </div>
+                  {checkinError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{checkinError}</p>}
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowCheckinForm(false)} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button onClick={saveCheckin} disabled={checkinSaving || !checkinForm.date}
+                      className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700 disabled:opacity-50">
+                      {checkinSaving ? 'Saving…' : 'Save Check-in'}
+                    </button>
+                  </div>
+                </div>
+              )}
               {loadingCheckins ? <p className="text-sm text-gray-400">Loading check-ins…</p>
                 : checkins.length === 0 ? <p className="text-sm text-gray-400">No check-ins recorded yet.</p>
                 : (

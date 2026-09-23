@@ -400,6 +400,57 @@ export async function fetchCheckins(fellowId?: string): Promise<Checkin[]> {
   return fellowId ? checkins.filter((c) => c.fellow_id === fellowId) : checkins;
 }
 
+/**
+ * Log a check-in: append a row to the Check-ins tab, then move the fellow's
+ * `Last Check-in` forward if this check-in is newer. That column is a plain
+ * value on the Fellows tab, not a formula, so nothing else updates it.
+ *
+ * The row is written RAW so notes starting with "=" or "+" stay text instead
+ * of being evaluated as a formula. `Last Check-in` is written USER_ENTERED so
+ * it becomes a real date like the rest of that column.
+ */
+export async function addCheckin(data: Omit<Checkin, 'id'>): Promise<{ checkin: Checkin; lastCheckInUpdated: boolean }> {
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const checkin: Checkin = { id: crypto.randomUUID(), ...data };
+
+  const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Check-ins!2:2' });
+  const headers = (headerRes.data.values?.[0] || []) as string[];
+  const map: Record<string, string> = {
+    'ID': checkin.id,
+    'Fellow ID': checkin.fellow_id,
+    'Date': checkin.date,
+    'Check-in Type': checkin.check_in_type,
+    'Notes': checkin.notes,
+    'Staff Member': checkin.staff_member,
+  };
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'Check-ins',
+    valueInputOption: 'RAW',
+    requestBody: { values: [headers.map((h) => map[h] ?? '')] },
+  });
+
+  // Only ever move Last Check-in forward — logging an older check-in after
+  // the fact shouldn't make the fellow look more overdue than they are.
+  const fellowHeaders = await getFellowHeaders();
+  const col = fellowHeaders.indexOf('Last Check-in');
+  const rows = await getSheetValues('Fellows');
+  const idx = rows.findIndex((r, i) => i >= 2 && r[0] === checkin.fellow_id);
+  if (col === -1 || idx === -1) return { checkin, lastCheckInUpdated: false };
+  const current = new Date(rows[idx][col] || '');
+  if (!isNaN(current.getTime()) && current >= new Date(checkin.date)) {
+    return { checkin, lastCheckInUpdated: false };
+  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Fellows!${columnLetter(col)}${idx + 1}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[checkin.date]] },
+  });
+  return { checkin, lastCheckInUpdated: true };
+}
+
 export async function fetchStatusReports(fellowId?: string): Promise<StatusReport[]> {
   const rows = await getSheetValues('Status Reports');
   const records = rowsToObjects(rows);

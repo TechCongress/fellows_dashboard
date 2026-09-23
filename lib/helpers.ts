@@ -178,3 +178,11 @@ export function getQuarterCompliance(
   }
   return result;
 }
+
+/** Allowed values for Check-in Type — must match the Check-ins tab's dropdown. */
+export const CHECKIN_TYPES = ['Email', 'Phone', 'Zoom', 'In-person', 'Slack', 'Text'];
+
+/** Today as YYYY-MM-DD in America/New_York, so a late-evening entry isn't dated tomorrow. */
+export function todayISOET(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
