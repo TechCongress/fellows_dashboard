@@ -10,30 +10,56 @@ request time, so **no redeploy is needed** after you edit the sheet.
 
 ---
 
-## 1. Fellows tab — two new columns
+## 1. Career Pathways Engine tab — already created ✅
 
-| Header (exact text) | Type | Cap | Source list |
+All tagging lives on its own **Career Pathways Engine** tab: one row per person,
+fellows and alumni together. This replaces the earlier plan of adding pathway
+columns to the Fellows and Alumni tabs. Don't add tagging columns there, because
+the dashboard doesn't read them.
+
+| Header (exact text) | Type | Cap | Notes |
 |---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 34 tags in §4 |
-| `Target Pathways` | Multi-select dropdown (chips) | 2 | The 9 tags in §5 |
+| `ID` | Text | — | Join key. Must match the person's `ID` on the Fellows or Alumni tab |
+| `Name` | Text | — | Written automatically when the row is created |
+| `Record Type` | Text | — | `Current Fellow` or `Alumni`, written automatically. A label for scanning the sheet only. The Fellows and Alumni tabs decide who is an alum |
+| `Cohort` | Text | — | Written automatically when the row is created |
+| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The 34 tags in §4. Used for fellows and alumni |
+| `Target Pathways` | Multi-select dropdown (chips) | 2 | The 9 tags in §5. Fellows only |
+| `Pathway Override` | Single-select dropdown | 1 | The 9 tags in §5. Alumni only, and blank for almost everyone. See §2 |
+| `Last Updated` | Date | — | Stamped automatically as `MM/DD/YYYY` on every write |
+| `Notes` | Text | — | Free text |
 
-Turns on: the tag editors on each fellow's **Career Pathway** tab, and their
-half of the alumni matching.
+A person's row is **created automatically** the first time they're tagged on the
+dashboard, so there's no need to add rows by hand. No changes are needed to
+`Sector`, `Currently on the Hill?`, or `Contact?` on the Alumni tab. The matching
+logic reuses all three as they are.
 
-## 2. Alumni tab — two new columns
+Turns on: the tag editors on every person's **Career Pathway** tab, and both
+halves of the matching.
 
-| Header (exact text) | Type | Cap | Source list |
-|---|---|---|---|
-| `Policy Issue Areas` | Multi-select dropdown (chips) | 3 | The same 34 tags — must be the identical list as the Fellows tab |
-| `Realized Pathway` | Single-select dropdown | 1 | The 9 tags in §5 |
+Match quality depends on how many alumni have policy areas tagged. The fellow's
+Career Pathway tab reports the count ("12 of 84 alumni are tagged"), so you can
+watch that number go up.
 
-Turns on: the tag editors on each alum's **Career Pathway** tab, and the other
-half of matching. No changes needed to `Sector`, `Currently on the Hill?`, or
-`Contact?` — the matching logic reuses all three as they are.
+## 2. Alumni realized pathway — derived, so there's no column
 
-Match quality is bounded entirely by how many alumni get tagged here. The
-fellow's Career Pathway tab reports the count ("12 of 84 alumni are tagged") so
-you can see that ratio improving.
+There is deliberately **no `Realized Pathway` column**. A hand-kept realized
+pathway goes out of date every time an alum changes jobs. The dashboard works it
+out from the **Career History** tab (§3) instead, which is already kept current:
+sector narrows it to a family, then keywords in the organization and title pick
+the pathway. The logic is in `lib/pathway-derivation.ts`.
+
+Each alum's Career Pathway tab shows the derived pathway and the role it came
+from, e.g. "Executive Branch (from *Office of Science and Technology Policy*)",
+so a wrong result is easy to spot.
+
+When the derivation is wrong, set **`Pathway Override`** for that alum (from the
+dashboard or directly in the sheet). The override always wins. The alum's tab
+labels it "override" and still shows what *would* have been derived, so an
+override never quietly hides a bad rule. Leave it blank otherwise.
+
+An alum with no career history gets no derived pathway. They can still be
+matched on shared policy areas and sector.
 
 ## 3. Career History tab — already created ✅
 (renamed from "Alumni Career History" — same tab, code updated to match)
@@ -266,8 +292,9 @@ not contact" are excluded outright.
 | Signal | Points |
 |---|---|
 | Each shared policy issue area | +2 |
-| Alum's realized pathway is one of the fellow's 2 targets | +3 |
+| Alum's realized pathway (derived, or the override) is one of the fellow's 2 targets | +3 |
 | Alum's sector maps to a target-pathway sector | +2 |
+| A *past* post-fellowship pathway is one of the targets (only if the current one isn't) | +1 |
 
 The pathway and sector bonuses **stack** — an alum matching on both gets 5, and
 still appears exactly once in the list.
