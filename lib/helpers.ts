@@ -186,3 +186,28 @@ export const CHECKIN_TYPES = ['Email', 'Phone', 'Zoom', 'In-person', 'Slack', 'T
 export function todayISOET(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+
+/**
+ * Allowed values for Engagement Type on the Alumni Engagement Log tab — must
+ * match that tab's dropdown. `group` drives the Events / Conversations /
+ * Contributions filters on an alum's Engagement tab.
+ */
+export const ENGAGEMENT_TYPES: { name: string; group: 'Events' | 'Conversations' | 'Contributions' }[] = [
+  { name: 'Attended event', group: 'Events' },
+  { name: 'Co-hosted or sponsored event', group: 'Events' },
+  { name: 'Coffee or 1:1', group: 'Conversations' },
+  { name: 'Email or call', group: 'Conversations' },
+  { name: 'Speaker or panelist', group: 'Contributions' },
+  { name: 'Alumni Advisor', group: 'Contributions' },
+  { name: 'Application reviewer', group: 'Contributions' },
+  { name: 'Referred an applicant', group: 'Contributions' },
+];
+
+/** How recently an alum was engaged, as a label. `days` = days since the newest engagement. */
+export function engagementStatus(days: number | null): 'Active' | 'Warm' | 'Going quiet' | 'Lapsed' | 'No engagement yet' {
+  if (days === null) return 'No engagement yet';
+  if (days <= 90) return 'Active';
+  if (days <= 180) return 'Warm';
+  if (days <= 365) return 'Going quiet';
+  return 'Lapsed';
+}

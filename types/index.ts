@@ -30,6 +30,17 @@ export interface Fellow {
   target_pathways: string[];
 }
 
+/** One row on the Alumni Engagement Log tab — a single staff-logged touchpoint. */
+export interface AlumniEngagement {
+  id: string;             // "Record ID": the entry's own ID
+  alumni_id: string;      // "Alumni ID": joins to Alumni.id
+  alumni_name: string;    // readability only when scanning the sheet
+  date: string;           // YYYY-MM-DD
+  engagement_type: string;
+  notes: string;
+  staff_member: string;   // who logged it, typed in on the dashboard
+}
+
 export interface Checkin {
   id: string;
   fellow_id: string;
