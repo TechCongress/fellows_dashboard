@@ -44,7 +44,17 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
   with no Career History yet (or none marked `Current`) has a blank sector and
   shows as "Unknown" on the By Sector chart. The Alumni tab's old `Sector`
   column is no longer read or written
-- Engagement tracking via "Last Engaged" date and engagement notes
+- **Engagement tab** on each alum's profile: a status pill (Active within 90
+  days, Warm within 180, Going quiet within a year, Lapsed after that), last
+  engaged date, touchpoints in the last 12 months, and events they came to
+- **Engagement log**: staff log each touchpoint (date, engagement type, their name, notes)
+  with **+ Log engagement**, filterable by Events, Conversations and
+  Contributions. Saved to the **Alumni Engagement Log** tab
+- **Last Engaged updates automatically** when an engagement is logged, and only
+  ever moves forward. It's no longer typed in the alumni edit form. Alumni
+  event attendance isn't tracked separately, so events are logged here as
+  "Attended event"
+- The old free-text Engagement Notes show as "Earlier notes" on the Engagement tab
 - Filter by fellow type, sector, party, chamber, and cohort
 
 ### Events & Attendance
@@ -318,7 +328,7 @@ git push --set-upstream origin feature-name
 
 ## Google Sheets Structure
 
-The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, and **Career History**.
+The dashboard reads from and writes to a single Google Spreadsheet with the following tabs: **Fellows**, **Check-ins**, **Status Reports**, **Alumni**, **Events**, **Event Attendance**, **Career Pathways Engine**, **Career History**, and **Alumni Engagement Log**.
 
 Missing tabs and missing columns degrade gracefully: the feature goes read-only
 and the dashboard shows an amber note naming the exact column to add, rather than
@@ -350,6 +360,24 @@ One row per person, fellows and alumni together. Expected headers:
   count
 - **Last Updated** — stamped automatically as `MM/DD/YYYY` on every write
 - A person's row is **created automatically** the first time they're tagged
+
+### Alumni Engagement Log tab
+
+One row per staff-logged touchpoint with an alum. Expected headers:
+
+`Record ID · Alumni ID · Name · Date · Engagement Type · Notes · Staff Member`
+
+- **Record ID** is the entry's own ID; **Alumni ID** must match the alum's ID on
+  the Alumni tab
+- **Engagement Type** is a dropdown: Attended event, Co-hosted or sponsored
+  event, Coffee or 1:1, Email or call, Speaker or panelist, Alumni Advisor,
+  Application reviewer, Referred an applicant. The list lives in
+  `ENGAGEMENT_TYPES` in `lib/helpers.ts` and must match the tab's dropdown
+- **Staff Member** is the name of whoever logged the entry, typed into the
+  log form (the dashboard has one shared login, so it can't tell who's signed
+  in). The browser remembers the last name used
+- Rows are appended by the dashboard; saving one moves the alum's Last Engaged
+  forward if it's newer
 
 ### Career History tab
 

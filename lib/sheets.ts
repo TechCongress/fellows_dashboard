@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
-import { Fellow, Checkin, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase, PathwayRecord } from '@/types';
+import { Fellow, Checkin, AlumniEngagement, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase, PathwayRecord } from '@/types';
 import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector, normalizePathway, MAX_POLICY_AREAS, MAX_TARGET_PATHWAYS, primaryCurrentRole, inferredPriorRole, roleLabel } from '@/lib/career-pathway';
 
 const SCOPES = [
@@ -451,6 +451,122 @@ export async function addCheckin(data: Omit<Checkin, 'id'>): Promise<{ checkin: 
   return { checkin, lastCheckInUpdated: true };
 }
 
+// ── Alumni Engagement Log ───────────────────────────────────────────────────
+
+/**
+ * Tab name candidates, in priority order. The second is the tab's name as it
+ * was first created (missing an "e"); kept so the feature works whichever
+ * spelling the sheet currently has.
+ */
+const ENGAGEMENT_SHEET_NAMES = ['Alumni Engagement Log', 'Alumni Engagment Log'];
+
+async function findEngagementSheet(): Promise<{ name: string; rows: string[][] } | null> {
+  for (const name of ENGAGEMENT_SHEET_NAMES) {
+    const rows = await getSheetValuesSafe(name);
+    if (rows !== null) return { name, rows };
+  }
+  return null;
+}
+
+const ENGAGEMENT_HEADERS = ['Record ID', 'Alumni ID', 'Name', 'Date', 'Engagement Type', 'Notes', 'Staff Member'];
+
+export interface AlumniEngagementResult {
+  available: boolean;        // false = the tab doesn't exist yet
+  entries: AlumniEngagement[];
+  missingColumns: string[];  // expected headers the tab doesn't have; their values aren't saved
+}
+
+export async function fetchAlumniEngagements(alumniId?: string): Promise<AlumniEngagementResult> {
+  const sheet = await findEngagementSheet();
+  if (!sheet) return { available: false, entries: [], missingColumns: [] };
+  const headers = sheet.rows[1] || [];
+  const missingColumns = ENGAGEMENT_HEADERS.filter((h) => !headers.includes(h));
+  const entries = rowsToObjects(sheet.rows)
+    .filter((r) => r['Record ID'] && r['Alumni ID'])
+    .map((r) => ({
+      id: r['Record ID'],
+      alumni_id: r['Alumni ID'],
+      alumni_name: r['Name'] || '',
+      date: r['Date'] || '',
+      engagement_type: r['Engagement Type'] || '',
+      notes: r['Notes'] || '',
+      staff_member: r['Staff Member'] || '',
+    }));
+  return { available: true, entries: alumniId ? entries.filter((e) => e.alumni_id === alumniId) : entries, missingColumns };
+}
+
+/**
+ * Log an engagement: append a row to the Alumni Engagement Log tab, then move
+ * the alum's `Last Engaged` forward if this engagement is newer — the same
+ * rule addCheckin uses for Last Check-in. Returns null when the alum isn't on
+ * the Alumni tab.
+ *
+ * The row is written RAW so notes starting with "=" or "+" stay text. Last
+ * Engaged is written USER_ENTERED so it stays a real date like the rest of
+ * that column.
+ */
+export async function addAlumniEngagement(
+  data: Pick<AlumniEngagement, 'alumni_id' | 'date' | 'engagement_type' | 'notes' | 'staff_member'>
+): Promise<{ engagement: AlumniEngagement; lastEngagedUpdated: boolean } | { error: 'no_tab' | 'no_alum' }> {
+  const sheet = await findEngagementSheet();
+  if (!sheet) return { error: 'no_tab' };
+
+  const alumniRows = await getSheetValues('Alumni');
+  const alumniHeaders = alumniRows[1] || [];
+  const idx = alumniRows.findIndex((r, i) => i >= 2 && r[0] === data.alumni_id);
+  if (idx === -1) return { error: 'no_alum' };
+  const nameCol = alumniHeaders.indexOf('Name');
+
+  const engagement: AlumniEngagement = {
+    id: crypto.randomUUID(),
+    alumni_name: nameCol >= 0 ? alumniRows[idx][nameCol] || '' : '',
+    ...data,
+  };
+
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const headers = sheet.rows[1] || [];
+  const map: Record<string, string> = {
+    'Record ID': engagement.id,
+    'Alumni ID': engagement.alumni_id,
+    'Name': engagement.alumni_name,
+    'Date': engagement.date,
+    'Engagement Type': engagement.engagement_type,
+    'Notes': engagement.notes,
+    'Staff Member': engagement.staff_member,
+  };
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${sheet.name}'`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [headers.map((h) => map[h] ?? '')] },
+  });
+
+  // Only ever move Last Engaged forward — logging an older engagement after
+  // the fact shouldn't make an alum look less recently engaged.
+  const col = alumniHeaders.indexOf('Last Engaged');
+  if (col === -1) return { engagement, lastEngagedUpdated: false };
+  const current = parseSheetDate(alumniRows[idx][col] || '');
+  if (current && current >= engagement.date) return { engagement, lastEngagedUpdated: false };
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `Alumni!${columnLetter(col)}${idx + 1}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[engagement.date]] },
+  });
+  return { engagement, lastEngagedUpdated: true };
+}
+
+/** A sheet date shown as M/D/YYYY or YYYY-MM-DD → YYYY-MM-DD, or null. Compared as strings, so no time zone shifts. */
+function parseSheetDate(value: string): string | null {
+  const v = value.trim();
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  return null;
+}
+
 export async function fetchStatusReports(fellowId?: string): Promise<StatusReport[]> {
   const rows = await getSheetValues('Status Reports');
   const records = rowsToObjects(rows);
@@ -698,7 +814,8 @@ function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
     'Location': d.location || '',
     'Contact?': d.contact === false ? 'FALSE' : 'TRUE',
     'LinkedIn': d.linkedin || '',
-    'Last Engaged': d.last_engaged || '',
+    // No 'Last Engaged': addAlumniEngagement moves it forward whenever an
+    // engagement is logged, so a save from a stale edit form can't roll it back.
     'Engagement Notes': d.engagement_notes || '',
     'Notes': d.notes || '',
   };
