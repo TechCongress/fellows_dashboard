@@ -1,12 +1,9 @@
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchCheckins, addCheckin } from '@/lib/sheets';
+import { fetchCheckins, addCheckin, deleteCheckin } from '@/lib/sheets';
 import { CHECKIN_TYPES } from '@/lib/helpers';
-import { cookies } from 'next/headers';
 
-async function authed() {
-  const cookieStore = await cookies();
-  return cookieStore.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 export async function GET(req: NextRequest) {
   if (!(await authed())) {
@@ -54,5 +51,27 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Failed to log checkin:', err);
     return NextResponse.json({ error: 'Could not save the check-in. Please try again.' }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/checkins — remove one logged check-in.
+ * Body: { id }
+ * Returns: { ok, lastCheckIn? } — lastCheckIn is the fellow's new Last Check-in
+ * ('' when cleared) when deleting changed it.
+ */
+export async function DELETE(req: NextRequest) {
+  if (!(await authed())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const { id } = await req.json().catch(() => ({}));
+  if (!id || typeof id !== 'string') return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  try {
+    const result = await deleteCheckin(id.trim());
+    if (!result) return NextResponse.json({ error: 'That check-in wasn\u2019t found. Nothing was deleted.' }, { status: 404 });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Failed to delete checkin:', err);
+    return NextResponse.json({ error: 'Could not delete the check-in. Please try again.' }, { status: 500 });
   }
 }

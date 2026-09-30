@@ -444,6 +444,11 @@ def sync(year: int, month: int) -> dict:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if len(sys.argv) not in (1, 3):
+        # A lone month (e.g. `3`) used to be ignored, silently syncing last month instead.
+        print("Usage: python sync_status_reports.py [year month]")
+        print("  e.g. python sync_status_reports.py 2026 3")
+        sys.exit(1)
     if len(sys.argv) == 3:
         try:
             year  = int(sys.argv[1])

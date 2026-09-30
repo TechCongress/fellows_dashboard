@@ -88,6 +88,10 @@ export const EVENT_TYPES = [
 
 export function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
+  // new Date('2026-09-10') is midnight UTC, which is the evening of Sep 9 in US
+  // time zones, so a bare YYYY-MM-DD is built as a local date instead.
+  const iso = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
   const formats = [
     (s: string) => new Date(s),
     (s: string) => { const [m, d, y] = s.split('/'); return new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`); },
@@ -210,4 +214,36 @@ export function engagementStatus(days: number | null): 'Active' | 'Warm' | 'Goin
   if (days <= 180) return 'Warm';
   if (days <= 365) return 'Going quiet';
   return 'Lapsed';
+}
+
+/**
+ * A date from the sheet as a sortable YYYY-MM-DD string ('' when blank or
+ * unreadable). Cells come back as M/D/YYYY, YYYY-MM-DD, or text like
+ * "Jan 15, 2026", depending on how they were entered; comparing those as raw
+ * strings puts 10/2 before 9/1. String-based, so no time-zone shifts.
+ */
+export function dateSortKey(value: string): string {
+  const v = (value || '').trim();
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  const d = new Date(v);
+  if (!v || isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** The offboarding checklist. Moving a fellow to Alumni requires every task to be ticked. */
+export const OFFBOARDING_TASKS: { label: string }[] = [
+  { label: 'Submitted Accomplishments document' },
+  { label: 'Completed exit interview' },
+  { label: 'Confirm final paycheck' },
+  { label: 'Offboard in Rippling' },
+  { label: 'Remove from #current-fellows-plus-tc Slack channel' },
+];
+
+/** True when a fellow's saved offboarding string ("0,1,2,3,4") covers every task. */
+export function offboardingComplete(completed: string | undefined): boolean {
+  const done = new Set((completed || '').split(',').map((x) => x.trim()).filter(Boolean).map(Number));
+  return OFFBOARDING_TASKS.every((_, i) => done.has(i));
 }

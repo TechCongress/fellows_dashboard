@@ -1,12 +1,9 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCareerHistory, saveCareerHistory } from '@/lib/sheets';
 import { phaseDateViolation, primaryRoleConflict } from '@/lib/career-pathway';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 /**
  * GET /api/career-history?personId=...

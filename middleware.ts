@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 
-export function middleware(req: NextRequest) {
-  const auth = req.cookies.get('tc-auth');
+export async function middleware(req: NextRequest) {
   const isLoginPage = req.nextUrl.pathname === '/';
   const isApiAuth = req.nextUrl.pathname === '/api/auth';
   if (isLoginPage || isApiAuth) return NextResponse.next();
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value))) {
     return NextResponse.redirect(new URL('/', req.url));
   }
   return NextResponse.next();

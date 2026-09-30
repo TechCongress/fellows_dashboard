@@ -1,11 +1,8 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextResponse } from 'next/server';
 import { fetchAccomplishments } from '@/lib/sheets';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 export async function GET() {
   if (!await authed()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -13,8 +10,8 @@ export async function GET() {
     const accomplishments = await fetchAccomplishments();
     return NextResponse.json(accomplishments);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[accomplishments]', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Details stay in the server log; the browser gets a generic message.
+    console.error('[accomplishments]', err);
+    return NextResponse.json({ error: 'Failed to load accomplishments' }, { status: 500 });
   }
 }

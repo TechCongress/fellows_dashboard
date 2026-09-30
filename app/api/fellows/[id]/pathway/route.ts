@@ -1,14 +1,11 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchFellows, fetchAlumni, fetchPathwayRecords, fetchCareerHistory } from '@/lib/sheets';
 import { rankAlumni, dateRangeLabel } from '@/lib/career-pathway';
 import { deriveAlumniPathways, derivationExplanation } from '@/lib/pathway-derivation';
 import { CareerHistoryEntry } from '@/types';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 /**
  * GET /api/fellows/[id]/pathway?limit=4

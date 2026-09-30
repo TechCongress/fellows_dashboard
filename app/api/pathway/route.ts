@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchPathwayRecords,
@@ -16,10 +16,7 @@ import {
 } from '@/lib/career-pathway';
 import { deriveAlumniPathways, derivationExplanation } from '@/lib/pathway-derivation';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 /**
  * Google's spreadsheet quota is 60 reads a minute per person, and it resets on

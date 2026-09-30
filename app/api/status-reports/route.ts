@@ -1,12 +1,14 @@
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchStatusReports, logStatusReport, deleteStatusReport } from '@/lib/sheets';
+import { fetchStatusReports, logStatusReport, deleteStatusReport, fetchFellows } from '@/lib/sheets';
 import { getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
-import { cookies } from 'next/headers';
 import { Resend } from 'resend';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
+const authed = isAuthed;
+
+/** Escape text for an HTML email body. */
+function esc(text: string): string {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
 export async function GET(req: NextRequest) {
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (!await authed()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const body = await req.json();
-    const { fellow_id, fellow_name, month, late, date_submitted, notes, report_start_date, report_end_month } = body;
+    const { fellow_id, fellow_name, month, late, date_submitted, notes } = body;
     if (!fellow_id || !fellow_name || !month || !date_submitted) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
@@ -33,12 +35,13 @@ export async function POST(req: NextRequest) {
     await logStatusReport({ fellow_id, fellow_name, month, late: !!late, date_submitted, notes });
 
     // ── Streak milestone check ─────────────────────────────────────────────
-    // Only check if this was an on-time submission and report dates are available
-    if (!late && report_start_date && process.env.RESEND_API_KEY) {
+    // Only on an on-time submission. The fellow's report window comes from the
+    // Fellows tab, not the request, so a request can't claim a streak.
+    if (!late && process.env.RESEND_API_KEY) {
       try {
+        const fellow = (await fetchFellows()).find((f) => f.id === fellow_id);
         const reports = await fetchStatusReports(fellow_id);
-        const fakeFellow = { report_start_date, report_end_month, requires_monthly_reports: true } as any;
-        const requiredMonths = getRequiredReportMonths(fakeFellow);
+        const requiredMonths = fellow?.report_start_date ? getRequiredReportMonths(fellow) : [];
         const { streak } = calculateStreak(reports, requiredMonths);
 
         if (streak > 0 && streak % 3 === 0) {
@@ -47,10 +50,10 @@ export async function POST(req: NextRequest) {
           await resend.emails.send({
             from: 'TechCongress Dashboard <onboarding@resend.dev>',
             to: 'hello@techcongress.io',
-            subject: `🎁 ${fellow_name} has earned a gift card!`,
+            subject: `🎁 ${fellow?.name || fellow_name} has earned a gift card!`,
             html: `
               <p>Hi Mya,</p>
-              <p><strong>${fellow_name}</strong> just submitted their <strong>${month}</strong> status report on time, completing <strong>${streak} consecutive on-time submissions</strong>.</p>
+              <p><strong>${esc(fellow?.name || fellow_name)}</strong> just submitted their <strong>${esc(month)}</strong> status report on time, completing <strong>${streak} consecutive on-time submissions</strong>.</p>
               <p>They have now earned <strong>${giftCards} gift card${giftCards > 1 ? 's' : ''}</strong> total ($${giftCards * 50} in restaurant gift cards).</p>
               <p>— TechCongress Dashboard</p>
             `,
@@ -79,9 +82,7 @@ export async function POST(req: NextRequest) {
  * never have been recorded.
  */
 export async function DELETE(req: NextRequest) {
-  const cookieStore = await cookies();
-  const auth = cookieStore.get('tc-auth');
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await isAuthed())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {

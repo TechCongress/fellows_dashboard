@@ -1,12 +1,9 @@
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { fetchAlumniEngagements, addAlumniEngagement } from '@/lib/sheets';
 import { ENGAGEMENT_TYPES, todayISOET } from '@/lib/helpers';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 /** GET /api/alumni-engagement?alumniId=… — one alum's logged engagements (or everyone's). */
 export async function GET(req: NextRequest) {
