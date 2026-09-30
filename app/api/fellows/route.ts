@@ -1,11 +1,9 @@
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchFellows, createFellow, updateFellow, deleteFellow } from '@/lib/sheets';
-import { cookies } from 'next/headers';
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const auth = cookieStore.get('tc-auth');
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await isAuthed())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
@@ -18,9 +16,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  const auth = cookieStore.get('tc-auth');
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await isAuthed())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
@@ -34,14 +30,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const cookieStore = await cookies();
-  const auth = cookieStore.get('tc-auth');
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await isAuthed())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
     const { id, ...data } = await req.json();
     const ok = await updateFellow(id, data);
+    if (!ok) return NextResponse.json({ error: 'No fellow with that ID. Nothing was saved.' }, { status: 404 });
     return NextResponse.json({ ok });
   } catch (err) {
     console.error('Failed to update fellow:', err);
@@ -50,14 +45,13 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const cookieStore = await cookies();
-  const auth = cookieStore.get('tc-auth');
-  if (!auth || auth.value !== 'authenticated') {
+  if (!(await isAuthed())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
     const { id } = await req.json();
     const ok = await deleteFellow(id);
+    if (!ok) return NextResponse.json({ error: 'No fellow with that ID. Nothing was deleted.' }, { status: 404 });
     return NextResponse.json({ ok });
   } catch (err) {
     console.error('Failed to delete fellow:', err);

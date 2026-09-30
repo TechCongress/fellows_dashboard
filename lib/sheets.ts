@@ -10,19 +10,12 @@ const SCOPES = [
 ];
 
 function getAuth() {
+  // A service account signs in with just its email and private key.
   return new google.auth.GoogleAuth({
     credentials: {
-      type: process.env.GCP_TYPE,
-      project_id: process.env.GCP_PROJECT_ID,
-      private_key_id: process.env.GCP_PRIVATE_KEY_ID,
-      private_key: (process.env.GCP_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
       client_email: process.env.GCP_CLIENT_EMAIL,
-      client_id: process.env.GCP_CLIENT_ID,
-      auth_uri: process.env.GCP_AUTH_URI,
-      token_uri: process.env.GCP_TOKEN_URI,
-      auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_CERT_URL,
-      client_x509_cert_url: process.env.GCP_CLIENT_CERT_URL,
-    } as any,
+      private_key: (process.env.GCP_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    },
     scopes: SCOPES,
   });
 }
@@ -250,32 +243,50 @@ export async function fetchFellows(): Promise<Fellow[]> {
   }));
 }
 
+/**
+ * Fellows tab columns the dashboard manages, header → field. Booleans are
+ * written as TRUE/FALSE; Status defaults to Active.
+ */
+const FELLOW_COLUMNS: [string, keyof Fellow][] = [
+  ['Name', 'name'], ['Email', 'email'], ['Congressional Email', 'congressional_email'],
+  ['Phone Number', 'phone'], ['LinkedIn', 'linkedin'], ['Fellow Type', 'fellow_type'],
+  ['Party', 'party'], ['Office', 'office'], ["Supervisor's Email", 'supervisor_email'],
+  ['Chamber', 'chamber'], ['Cohort', 'cohort'], ['Status', 'status'],
+  ['Start Date', 'start_date'], ['End Date', 'end_date'], ['Last Check-in', 'last_check_in'],
+  ['Education', 'education'], ['Notes', 'notes'], ['Requires Monthly Reports', 'requires_monthly_reports'],
+  ['Report Start Date', 'report_start_date'], ['Report End Month', 'report_end_month'],
+  ['Onboarding Completed Tasks', 'onboarding_completed'], ['Offboarding Completed Tasks', 'offboarding_completed'],
+];
+
+/**
+ * Written only by their own paths (addCheckin, the onboarding and offboarding
+ * endpoints), never by a general edit. The edit forms send a snapshot taken
+ * when they opened, so writing these from it would undo a check-in or a
+ * ticked task made in the meantime.
+ */
+const FELLOW_COLUMNS_OWNED_ELSEWHERE = new Set<keyof Fellow>(['last_check_in', 'onboarding_completed', 'offboarding_completed']);
+
+function fellowCell(key: keyof Fellow, d: Partial<Fellow>): string {
+  if (key === 'requires_monthly_reports') return d.requires_monthly_reports ? 'TRUE' : 'FALSE';
+  if (key === 'status') return d.status || 'Active';
+  const v = d[key];
+  return v == null ? '' : String(v);
+}
+
 function fellowDataMap(id: string, d: Partial<Fellow>): Record<string, string> {
-  return {
-    'ID': id,
-    'Name': d.name || '',
-    'Email': d.email || '',
-    'Congressional Email': d.congressional_email || '',
-    'Phone Number': d.phone || '',
-    'LinkedIn': d.linkedin || '',
-    'Fellow Type': d.fellow_type || '',
-    'Party': d.party || '',
-    'Office': d.office || '',
-    "Supervisor's Email": d.supervisor_email || '',
-    'Chamber': d.chamber || '',
-    'Cohort': d.cohort || '',
-    'Status': d.status || 'Active',
-    'Start Date': d.start_date || '',
-    'End Date': d.end_date || '',
-    'Last Check-in': d.last_check_in || '',
-    'Education': d.education || '',
-    'Notes': d.notes || '',
-    'Requires Monthly Reports': d.requires_monthly_reports ? 'TRUE' : 'FALSE',
-    'Report Start Date': d.report_start_date || '',
-    'Report End Month': d.report_end_month || '',
-    'Onboarding Completed Tasks': d.onboarding_completed || '',
-    'Offboarding Completed Tasks': d.offboarding_completed || '',
-  };
+  const map: Record<string, string> = { 'ID': id };
+  for (const [header, key] of FELLOW_COLUMNS) map[header] = fellowCell(key, d);
+  return map;
+}
+
+/** Only the fields the caller actually sent, minus the ones owned elsewhere. */
+function fellowUpdateMap(d: Partial<Fellow>): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const [header, key] of FELLOW_COLUMNS) {
+    if (d[key] === undefined || FELLOW_COLUMNS_OWNED_ELSEWHERE.has(key)) continue;
+    map[header] = fellowCell(key, d);
+  }
+  return map;
 }
 
 async function getFellowHeaders(): Promise<string[]> {
@@ -290,100 +301,41 @@ async function getFellowHeaders(): Promise<string[]> {
 export async function createFellow(data: Partial<Fellow>): Promise<boolean> {
   const id = newId();
   const headers = await getFellowHeaders();
-  const map = fellowDataMap(id, data);
-  const row = headers.map(h => map[h] ?? '');
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: 'Fellows',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
+    requestBody: { values: [rowForAppend(headers, fellowDataMap(id, data))] },
   });
   return true;
 }
 
+/** Update the fields sent, by header, on the fellow's current row. False when the fellow isn't found. */
 export async function updateFellow(id: string, data: Partial<Fellow>): Promise<boolean> {
-  const headers = await getFellowHeaders();
-  const map = fellowDataMap(id, data);
-  const row = headers.map(h => map[h] ?? '');
-  const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const rowNum = await findRowById('Fellows', id);
-  if (!rowNum) return false;
-  const lastCol = columnLetter(headers.length - 1);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `Fellows!A${rowNum}:${lastCol}${rowNum}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
-  });
+  const located = await locateRow('Fellows', byId(id));
+  if (!located) return false;
+  await writeRowCells('Fellows', located, fellowUpdateMap(data));
+  return true;
+}
+
+async function updateFellowColumn(id: string, header: string, value: string): Promise<boolean> {
+  const located = await locateRow('Fellows', byId(id));
+  if (!located || !located.headers.includes(header)) return false; // not found, or column not added yet
+  await writeRowCells('Fellows', located, { [header]: value });
   return true;
 }
 
 export async function updateFellowOnboarding(id: string, completed: string): Promise<boolean> {
-  const headers = await getFellowHeaders();
-  const colIndex = headers.indexOf('Onboarding Completed Tasks');
-  if (colIndex === -1) return false; // column not yet added to sheet
-  const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const rowNum = await findRowById('Fellows', id);
-  if (!rowNum) return false;
-  const colLetter = columnLetter(colIndex);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `Fellows!${colLetter}${rowNum}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[completed]] },
-  });
-  return true;
+  return updateFellowColumn(id, 'Onboarding Completed Tasks', completed);
 }
 
 export async function updateFellowOffboarding(id: string, completed: string): Promise<boolean> {
-  const headers = await getFellowHeaders();
-  const colIndex = headers.indexOf('Offboarding Completed Tasks');
-  if (colIndex === -1) return false;
-  const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const rowNum = await findRowById('Fellows', id);
-  if (!rowNum) return false;
-  const colLetter = columnLetter(colIndex);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `Fellows!${colLetter}${rowNum}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[completed]] },
-  });
-  return true;
+  return updateFellowColumn(id, 'Offboarding Completed Tasks', completed);
 }
 
 export async function deleteFellow(id: string): Promise<boolean> {
-  const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const rowNum = await findRowById('Fellows', id);
-  if (!rowNum) return false;
-
-  // Get the sheet ID for the "Fellows" tab
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const fellowsSheet = meta.data.sheets?.find(s => s.properties?.title === 'Fellows');
-  const sheetId = fellowsSheet?.properties?.sheetId;
-  if (sheetId == null) return false;
-
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId,
-            dimension: 'ROWS',
-            startIndex: rowNum - 1, // 0-indexed
-            endIndex: rowNum,
-          },
-        },
-      }],
-    },
-  });
-  return true;
+  return deleteMatchingRow('Fellows', byId(id));
 }
 
 export async function fetchCheckins(fellowId?: string): Promise<Checkin[]> {
@@ -398,6 +350,46 @@ export async function fetchCheckins(fellowId?: string): Promise<Checkin[]> {
     staff_member: r['Staff Member'] || '',
   }));
   return fellowId ? checkins.filter((c) => c.fellow_id === fellowId) : checkins;
+}
+
+/**
+ * Delete one logged check-in. If it was the fellow's most recent one — its
+ * date is the fellow's current Last Check-in — Last Check-in falls back to the
+ * newest remaining check-in, or is cleared when none are left, so the "Needs
+ * Check-in" badge stays honest.
+ *
+ * Returns null when there's no such check-in. `lastCheckIn` is the fellow's new
+ * Last Check-in (YYYY-MM-DD or '') when it changed, undefined when it didn't.
+ */
+export async function deleteCheckin(id: string): Promise<{ lastCheckIn?: string } | null> {
+  const target = await locateRow('Check-ins', byId(id));
+  if (!target) return null;
+  const fellowId = (target.record['Fellow ID'] || '').trim();
+  const deletedDate = parseSheetDate(target.record['Date'] || '');
+  if (!(await deleteMatchingRow('Check-ins', byId(id)))) return null;
+
+  try {
+    const fellow = await locateRow('Fellows', byId(fellowId));
+    if (!fellow || !fellow.headers.includes('Last Check-in')) return {};
+    const current = parseSheetDate(fellow.record['Last Check-in'] || '');
+    if (!deletedDate || current !== deletedDate) return {}; // an older check-in; Last Check-in is unaffected
+    // Fresh read of what's left: row 1 is the banner, row 2 the headers.
+    const rows = await readSheet('Check-ins');
+    const headers = rows[1] || [];
+    const fCol = headers.indexOf('Fellow ID'), dCol = headers.indexOf('Date');
+    const newest = rows.slice(2)
+      .filter((r) => (r[fCol] || '').trim() === fellowId)
+      .map((r) => parseSheetDate(r[dCol] || ''))
+      .filter((d): d is string => !!d)
+      .sort()
+      .pop() || '';
+    await writeRowCells('Fellows', fellow, { 'Last Check-in': newest });
+    return { lastCheckIn: newest };
+  } catch (err) {
+    // The check-in is already gone; only the Last Check-in recalculation failed.
+    console.error(`Deleted check-in ${id} but could not update Last Check-in for ${fellowId}:`, err);
+    return {};
+  }
 }
 
 /**
@@ -433,23 +425,30 @@ export async function addCheckin(data: Omit<Checkin, 'id'>): Promise<{ checkin: 
 
   // Only ever move Last Check-in forward — logging an older check-in after
   // the fact shouldn't make the fellow look more overdue than they are.
-  const fellowHeaders = await getFellowHeaders();
-  const col = fellowHeaders.indexOf('Last Check-in');
-  const rows = await getSheetValues('Fellows');
-  const idx = rows.findIndex((r, i) => i >= 2 && r[0] === checkin.fellow_id);
-  if (col === -1 || idx === -1) return { checkin, lastCheckInUpdated: false };
-  const current = new Date(rows[idx][col] || '');
-  if (!isNaN(current.getTime()) && current >= new Date(checkin.date)) {
-    return { checkin, lastCheckInUpdated: false };
-  }
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `Fellows!${columnLetter(col)}${idx + 1}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[checkin.date]] },
-  });
-  return { checkin, lastCheckInUpdated: true };
+  const lastCheckInUpdated = await moveDateForward('Fellows', checkin.fellow_id, 'Last Check-in', checkin.date);
+  return { checkin, lastCheckInUpdated };
 }
+
+/**
+ * Set `header` on the record's row to `isoDate` if that's later than what's
+ * there. Runs after the log row is already saved, so a failure here is logged
+ * and reported as "not updated" rather than thrown — throwing made the request
+ * look failed, and a retry then saved the check-in or engagement twice.
+ */
+async function moveDateForward(sheetName: string, id: string, header: string, isoDate: string): Promise<boolean> {
+  try {
+    const located = await locateRow(sheetName, byId(id));
+    if (!located || !located.headers.includes(header)) return false;
+    const current = parseSheetDate(located.record[header] || '');
+    if (current && current >= isoDate) return false;
+    await writeRowCells(sheetName, located, { [header]: isoDate });
+    return true;
+  } catch (err) {
+    console.error(`Saved the entry but could not update ${header} for ${id}:`, err);
+    return false;
+  }
+}
+
 
 // ── Alumni Engagement Log ───────────────────────────────────────────────────
 
@@ -524,7 +523,6 @@ export async function addAlumniEngagement(
   };
 
   const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
   const headers = sheet.rows[1] || [];
   const map: Record<string, string> = {
     'Record ID': engagement.id,
@@ -536,7 +534,7 @@ export async function addAlumniEngagement(
     'Staff Member': engagement.staff_member,
   };
   await sheets.spreadsheets.values.append({
-    spreadsheetId,
+    spreadsheetId: getSpreadsheetId(),
     range: `'${sheet.name}'`,
     valueInputOption: 'RAW',
     requestBody: { values: [headers.map((h) => map[h] ?? '')] },
@@ -544,17 +542,8 @@ export async function addAlumniEngagement(
 
   // Only ever move Last Engaged forward — logging an older engagement after
   // the fact shouldn't make an alum look less recently engaged.
-  const col = alumniHeaders.indexOf('Last Engaged');
-  if (col === -1) return { engagement, lastEngagedUpdated: false };
-  const current = parseSheetDate(alumniRows[idx][col] || '');
-  if (current && current >= engagement.date) return { engagement, lastEngagedUpdated: false };
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `Alumni!${columnLetter(col)}${idx + 1}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[engagement.date]] },
-  });
-  return { engagement, lastEngagedUpdated: true };
+  const lastEngagedUpdated = await moveDateForward('Alumni', engagement.alumni_id, 'Last Engaged', engagement.date);
+  return { engagement, lastEngagedUpdated };
 }
 
 /** A sheet date shown as M/D/YYYY or YYYY-MM-DD → YYYY-MM-DD, or null. Compared as strings, so no time zone shifts. */
@@ -600,38 +589,12 @@ export async function deleteStatusReport(fellowId: string, month: string): Promi
   const id = (fellowId || '').trim();
   const m = (month || '').trim();
   if (!id || !m) return false;
-
-  const rows = await getSheetValues('Status Reports');
-  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data.
-  // Column B (index 1) is Fellow ID, column D (index 3) is Month.
-  let rowNum = 0;
-  for (let i = 2; i < rows.length; i++) {
-    if ((rows[i]?.[1] || '').trim() === id && (rows[i]?.[3] || '').trim() === m) {
-      rowNum = i + 1;
-      break;
-    }
-  }
-  if (!rowNum) return false;
-
-  const sheets = await getSheetsClient();
-  const spreadsheetId = getSpreadsheetId();
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const tab = meta.data.sheets?.find((sh) => sh.properties?.title === 'Status Reports');
-  const sheetId = tab?.properties?.sheetId;
-  if (sheetId == null) return false;
-
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [{
-        deleteDimension: {
-          range: { sheetId, dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum },
-        },
-      }],
-    },
-  });
-  return true;
+  return deleteMatchingRow('Status Reports', reportMatch(id, m));
 }
+
+/** The fellow + month pair that makes a status report unique. */
+const reportMatch = (fellowId: string, month: string) => (r: Record<string, string>) =>
+  (r['Fellow ID'] || '').trim() === fellowId && (r['Month'] || '').trim() === month;
 
 export async function logStatusReport(data: {
   fellow_id: string;
@@ -641,43 +604,30 @@ export async function logStatusReport(data: {
   date_submitted: string;
   notes?: string;
 }): Promise<boolean> {
+  const values = {
+    'Submitted': 'TRUE',
+    'Date Submitted': data.date_submitted,
+    'Notes': data.notes || '',
+    'Late': data.late ? 'TRUE' : 'FALSE',
+  };
+  // One row per fellow + month: update it if it's already there.
+  const existing = await locateRow('Status Reports', reportMatch(data.fellow_id.trim(), data.month.trim()));
+  if (existing) {
+    await writeRowCells('Status Reports', existing, values);
+    return true;
+  }
   const sheets = await getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
-  const rows = await getSheetValues('Status Reports');
-
-  // Check if a record for this fellow+month already exists and update it
-  // rows[0]=warning, rows[1]=headers, rows[2+]=data
-  for (let i = 2; i < rows.length; i++) {
-    if (rows[i][1] === data.fellow_id && rows[i][3] === data.month) {
-      const rowNum = i + 1;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `Status Reports!E${rowNum}:H${rowNum}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: {
-          values: [['TRUE', data.date_submitted, data.notes || '', data.late ? 'TRUE' : 'FALSE']],
-        },
-      });
-      return true;
-    }
-  }
-
-  // No existing record — append a new row
+  const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: "'Status Reports'!2:2" });
+  const headers = (headerRes.data.values?.[0] || []) as string[];
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: 'Status Reports',
     valueInputOption: 'USER_ENTERED',
     requestBody: {
-      values: [[
-        newId(),
-        data.fellow_id,
-        data.fellow_name,
-        data.month,
-        'TRUE',
-        data.date_submitted,
-        data.notes || '',
-        data.late ? 'TRUE' : 'FALSE',
-      ]],
+      values: [rowForAppend(headers, {
+        'ID': newId(), 'Fellow ID': data.fellow_id, 'Fellow Name': data.fellow_name, 'Month': data.month, ...values,
+      })],
     },
   });
   return true;
@@ -740,20 +690,6 @@ function newId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-function alumniRowValues(id: string, d: Partial<Alumni>): string[] {
-  const ft = Array.isArray(d.fellow_types) ? d.fellow_types.join(',') : '';
-  return [
-    id, d.name || '', d.email || '', d.phone || '', d.cohort || '',
-    ft, d.party || '', d.office_served || '', d.chamber || '',
-    d.education || '', d.prior_role || '', d.current_role || '',
-    d.served_on_hill ? 'TRUE' : 'FALSE',
-    d.currently_on_hill ? 'TRUE' : 'FALSE',
-    d.sector || '', d.location || '',
-    d.contact === false ? 'FALSE' : 'TRUE',
-    d.linkedin || '', d.last_engaged || '', d.engagement_notes || '', d.notes || '',
-  ];
-}
-
 /**
  * Every write in this file goes through here, which makes it the one place to
  * guarantee two things: writes retry on a rate-limit response, and a successful
@@ -785,13 +721,87 @@ async function getSheetsClient() {
   return client;
 }
 
-async function findRowById(sheetName: string, id: string): Promise<number | null> {
-  const rows = await getSheetValues(sheetName);
-  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data
+// ── Safe row writes ─────────────────────────────────────────────────────────
+//
+// Every write that targets an existing row goes through these. Two rules:
+//
+// 1. Find the row with a FRESH read, never the read cache. The cache can be a
+//    few seconds old (and is per server instance), so a row number taken from
+//    it can point at a different record after someone else inserts or deletes
+//    a row — and the write or delete then hits the wrong person.
+// 2. Write only the columns this code owns, by header name. A whole-row
+//    overwrite blanks columns the code doesn't know about and flattens any
+//    formulas in them; a positional write puts values in the wrong columns as
+//    soon as someone reorders the tab.
+
+interface LocatedRow {
+  rowNum: number;                   // 1-indexed sheet row
+  headers: string[];
+  record: Record<string, string>;
+}
+
+/** Find the first data row matching `match`, reading the tab fresh. Row 1 is the banner, row 2 the headers. */
+async function locateRow(sheetName: string, match: (record: Record<string, string>) => boolean): Promise<LocatedRow | null> {
+  const rows = await readSheet(sheetName);
+  const headers = rows[1] || [];
   for (let i = 2; i < rows.length; i++) {
-    if (rows[i][0] === id) return i + 1; // 1-indexed sheet row
+    const record: Record<string, string> = {};
+    headers.forEach((h, c) => { record[h] = rows[i][c] || ''; });
+    if (match(record)) return { rowNum: i + 1, headers, record };
   }
   return null;
+}
+
+const byId = (id: string, header = 'ID') => (r: Record<string, string>) => (r[header] || '').trim() === id;
+
+/**
+ * Write the given columns of one row, by header name, in a single request.
+ * Headers the tab doesn't have are skipped. Values are formula-escaped.
+ */
+async function writeRowCells(sheetName: string, located: LocatedRow, values: Record<string, string>): Promise<void> {
+  const data = Object.entries(values)
+    .map(([header, value]) => {
+      const col = located.headers.indexOf(header);
+      return col === -1 ? null : { range: `'${sheetName}'!${columnLetter(col)}${located.rowNum}`, values: [[escapeFormula(value)]] };
+    })
+    .filter((d): d is { range: string; values: string[][] } => d !== null);
+  if (data.length === 0) return;
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: { valueInputOption: 'USER_ENTERED', data },
+  });
+}
+
+/** A full new row laid out by the tab's own header order, formula-escaped. */
+function rowForAppend(headers: string[], values: Record<string, string>): string[] {
+  return headers.map((h) => escapeFormula(values[h] ?? ''));
+}
+
+/**
+ * Delete the row matching `match`. The row is located fresh right before the
+ * delete (after the one metadata call), so the gap in which another edit could
+ * shift rows is as small as the API allows.
+ */
+async function deleteMatchingRow(sheetName: string, match: (record: Record<string, string>) => boolean): Promise<boolean> {
+  const sheets = await getSheetsClient();
+  const spreadsheetId = getSpreadsheetId();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(title,sheetId))' });
+  const sheetId = meta.data.sheets?.find((s) => s.properties?.title === sheetName)?.properties?.sheetId;
+  if (sheetId == null) return false;
+  const located = await locateRow(sheetName, match);
+  if (!located) return false;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId, dimension: 'ROWS', startIndex: located.rowNum - 1, endIndex: located.rowNum },
+        },
+      }],
+    },
+  });
+  return true;
 }
 
 function alumniDataMap(id: string, d: Partial<Alumni>): Record<string, string> {
@@ -840,38 +850,25 @@ async function getAlumniHeaders(): Promise<string[]> {
 export async function createAlumni(data: Partial<Alumni>, keepId?: string): Promise<boolean> {
   const id = keepId || newId();
   const headers = await getAlumniHeaders();
-  const map = alumniDataMap(id, data);
-  const row = headers.map(h => map[h] ?? '');
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: 'Alumni',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
+    requestBody: { values: [rowForAppend(headers, alumniDataMap(id, data))] },
   });
   return true;
 }
 
 export async function updateAlumni(id: string, data: Partial<Alumni>): Promise<boolean> {
-  const headers = await getAlumniHeaders();
-  const map = alumniDataMap(id, data);
-  // rows[0] = warning banner, rows[1] = headers, rows[2+] = data
-  const rows = await getSheetValues('Alumni');
-  const idx = rows.findIndex((r, i) => i >= 2 && r[0] === id);
-  if (idx === -1) return false;
-  const rowNum = idx + 1; // 1-indexed sheet row
-  // A column the dashboard doesn't manage (e.g. the retired Current Role /
-  // Prior Role) keeps its existing value rather than being blanked on save.
-  const existing = rows[idx];
-  const row = headers.map((h, i) => (h in map ? map[h] : existing[i] ?? ''));
-  const sheets = await getSheetsClient();
-  const lastCol = columnLetter(headers.length - 1); // e.g. 21 cols → U
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: getSpreadsheetId(),
-    range: `Alumni!A${rowNum}:${lastCol}${rowNum}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
-  });
+  const located = await locateRow('Alumni', byId(id));
+  if (!located) return false;
+  // Only the columns alumniDataMap manages are written. Columns it doesn't
+  // (Last Engaged, the retired Current Role / Prior Role / Sector, anything
+  // added by hand) keep their contents — formulas included.
+  const values = alumniDataMap(id, data);
+  delete values['ID'];
+  await writeRowCells('Alumni', located, values);
   return true;
 }
 
@@ -898,37 +895,41 @@ export async function fetchEvents(): Promise<TCEvent[]> {
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-function eventRowValues(id: string, d: Partial<TCEvent>): string[] {
-  return [
-    id, d.name || '', d.date || '', d.type || '', d.location || '',
-    d.venue || '', d.cohort || '', d.quarter || '', d.description || '',
-    d.required !== false ? 'TRUE' : 'FALSE',
-    d.staffed_by || '',
-  ];
+/** Events tab columns the dashboard manages, header → field. */
+const EVENT_COLUMNS: [string, keyof TCEvent][] = [
+  ['Event Name', 'name'], ['Date', 'date'], ['Type', 'type'], ['Location', 'location'],
+  ['Venue', 'venue'], ['Cohort', 'cohort'], ['Quarter', 'quarter'], ['Description', 'description'],
+  ['Required for Fellows?', 'required'], ['Staffed By', 'staffed_by'],
+];
+
+/** `partial` = only the fields the caller sent, so a partial edit can't blank the rest. */
+function eventDataMap(d: Partial<TCEvent>, partial: boolean): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const [header, key] of EVENT_COLUMNS) {
+    if (partial && d[key] === undefined) continue;
+    map[header] = key === 'required' ? (d.required !== false ? 'TRUE' : 'FALSE') : String(d[key] ?? '');
+  }
+  return map;
 }
 
 export async function addEvent(data: Partial<TCEvent>): Promise<boolean> {
   const sheets = await getSheetsClient();
-  const id = newId();
+  const spreadsheetId = getSpreadsheetId();
+  const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Events!2:2' });
+  const headers = (headerRes.data.values?.[0] || []) as string[];
   await sheets.spreadsheets.values.append({
-    spreadsheetId: getSpreadsheetId(),
+    spreadsheetId,
     range: 'Events',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [eventRowValues(id, data)] },
+    requestBody: { values: [rowForAppend(headers, { 'Event ID': newId(), ...eventDataMap(data, false) })] },
   });
   return true;
 }
 
 export async function updateEvent(id: string, data: Partial<TCEvent>): Promise<boolean> {
-  const sheets = await getSheetsClient();
-  const rowNum = await findRowById('Events', id);
-  if (!rowNum) return false;
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: getSpreadsheetId(),
-    range: `Events!A${rowNum}:K${rowNum}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [eventRowValues(id, data)] },
-  });
+  const located = await locateRow('Events', byId(id, 'Event ID'));
+  if (!located) return false;
+  await writeRowCells('Events', located, eventDataMap(data, true));
   return true;
 }
 
@@ -1075,30 +1076,6 @@ function extractUrlsFromHtml(html: string): string[] {
 // Replace hyperlink-styled elements with real <a> tags using urls[] in order.
 // Handles <u> tags and <span> elements with any underline styling variant.
 // If the HTML already contains <a> tags, return it unchanged.
-function injectLinksIntoHtml(html: string, urls: string[]): string {
-  if (!html) return html;
-  if (/<a[\s>]/i.test(html)) return html; // already has anchors
-  if (urls.length === 0) return html;
-  let idx = 0;
-
-  const wrap = (inner: string) => {
-    if (idx >= urls.length) return null;
-    const url = urls[idx++];
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;">${inner}</a>`;
-  };
-
-  // 1. Try <u> tags first (SheetJS sometimes outputs these)
-  const afterU = html.replace(/<u>([\s\S]*?)<\/u>/gi, (match, inner) => wrap(inner) ?? match);
-  if (afterU !== html) return afterU;
-
-  // 2. Try <span> elements where the attributes mention "underline" in any form
-  idx = 0;
-  return html.replace(/<span([^>]*)>([\s\S]*?)<\/span>/gi, (match, attrs, inner) => {
-    if (!attrs.includes('underline')) return match;
-    return wrap(inner) ?? match;
-  });
-}
-
 function parseAccomplishmentSheet(
   ws: XLSX.WorkSheet,
   buf: Buffer,
@@ -1478,8 +1455,11 @@ export async function saveCareerHistory(
   personName: string,
   entries: Partial<CareerHistoryEntry>[]
 ): Promise<{ ok: boolean; available: boolean; saved: number }> {
-  const rows = await getSheetValuesSafe(CAREER_HISTORY_SHEET);
-  if (rows === null) return { ok: false, available: false, saved: 0 };
+  if ((await getSheetValuesSafe(CAREER_HISTORY_SHEET)) === null) return { ok: false, available: false, saved: 0 };
+  // Row positions below come from a fresh read, not the read cache: a cached
+  // copy can predate another person's save, and its row numbers would then
+  // overwrite or delete that person's rows.
+  const rows = await readSheet(CAREER_HISTORY_SHEET);
   const shape = readHistorySheet(rows);
   if (!shape) return { ok: false, available: false, saved: 0 };
 
@@ -1507,24 +1487,27 @@ export async function saveCareerHistory(
   ).map((e, i) => ({ ...e, order: i + 1 }));
 
   const width = Math.max(shape.headers.length, ...Object.values(shape.cols).map((i) => i + 1));
+  /** The cells this code manages for one entry, as [column index, value]. Text is formula-escaped. */
+  const cellsFor = (e: (typeof clean)[number]): [number, string][] => {
+    const cells: [string, string][] = [
+      ['id', personId],
+      ['name', escapeFormula(personName)],
+      ['order', String(e.order)],
+      ['phase', e.phase],
+      ['org', escapeFormula(e.org)],
+      ['title', escapeFormula(e.title)],
+      ['sector', e.sector],
+      ['start', toSheetMonth(e.start)],
+      ['end', toSheetMonth(e.end)],
+      ['notes', escapeFormula(e.notes)],
+      ['volunteer', e.is_volunteer ? 'TRUE' : 'FALSE'],
+      ['primary', e.is_primary ? 'TRUE' : 'FALSE'],
+    ];
+    return cells.map(([field, value]) => [shape.cols[field], value] as [number, string]).filter(([i]) => i >= 0);
+  };
   const buildRow = (e: (typeof clean)[number]): string[] => {
     const row = new Array<string>(width).fill('');
-    const put = (field: string, value: string) => {
-      const i = shape.cols[field];
-      if (i >= 0) row[i] = value;
-    };
-    put('id', personId);
-    put('name', personName);
-    put('order', String(e.order));
-    put('phase', e.phase);
-    put('org', e.org);
-    put('title', e.title);
-    put('sector', e.sector);
-    put('start', toSheetMonth(e.start));
-    put('end', toSheetMonth(e.end));
-    put('notes', e.notes);
-    put('volunteer', e.is_volunteer ? 'TRUE' : 'FALSE');
-    put('primary', e.is_primary ? 'TRUE' : 'FALSE');
+    for (const [i, value] of cellsFor(e)) row[i] = value;
     return row;
   };
 
@@ -1544,11 +1527,15 @@ export async function saveCareerHistory(
   const spreadsheetId = getSpreadsheetId();
   const lastCol = columnLetter(width - 1);
 
+  // Existing rows are rewritten one managed cell at a time, so a column the
+  // code doesn't know about (added by hand) keeps its contents.
   const overwriteCount = Math.min(existingRowNums.length, clean.length);
-  const data = clean.slice(0, overwriteCount).map((e, i) => ({
-    range: `${CAREER_HISTORY_SHEET}!A${existingRowNums[i]}:${lastCol}${existingRowNums[i]}`,
-    values: [buildRow(e)],
-  }));
+  const data = clean.slice(0, overwriteCount).flatMap((e, i) =>
+    cellsFor(e).map(([col, value]) => ({
+      range: `'${CAREER_HISTORY_SHEET}'!${columnLetter(col)}${existingRowNums[i]}`,
+      values: [[value]],
+    }))
+  );
   if (data.length > 0) {
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,

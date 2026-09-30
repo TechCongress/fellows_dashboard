@@ -1,11 +1,9 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchFellows, fetchAlumni, createAlumni, deleteFellow } from '@/lib/sheets';
+import { offboardingComplete } from '@/lib/helpers';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
+const authed = isAuthed;
 
 /**
  * POST /api/fellows/move-to-alumni
@@ -49,6 +47,11 @@ export async function POST(req: NextRequest) {
 
     if (!alreadyAlumni) {
       if (!fellow) return NextResponse.json({ error: 'No fellow with that ID' }, { status: 404 });
+      // Same rule the Move button follows on the page, enforced here too so a
+      // request can't skip it.
+      if (!offboardingComplete(fellow.offboarding_completed)) {
+        return NextResponse.json({ error: 'Finish every offboarding task before moving this fellow to Alumni.' }, { status: 409 });
+      }
       const created = await createAlumni(
         {
           name: fellow.name,

@@ -131,15 +131,28 @@ function AttendanceModal({ event, fellows, attendance, onClose, onSaved }: {
   }, [attendance, event.id]);
   const [checks, setChecks] = useState<Record<string, boolean>>({ ...existing });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   async function handleSave() {
     setSaving(true);
+    setSaveError('');
     const map: Record<string, { fellowName: string; attended: boolean }> = {};
     eligible.forEach(f => { map[f.id] = { fellowName: f.name, attended: !!checks[f.id] }; });
-    await fetch('/api/attendance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: event.id, attendanceMap: map }) });
-    setSaving(false);
-    onSaved();
-    onClose();
+    try {
+      const res = await fetch('/api/attendance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: event.id, attendanceMap: map }) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        // Keep the modal open with the ticks intact so nothing has to be redone.
+        setSaveError(json.error || 'Attendance was not saved. Please try again.');
+        return;
+      }
+      onSaved();
+      onClose();
+    } catch {
+      setSaveError('Network error. Attendance was not saved.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -161,6 +174,7 @@ function AttendanceModal({ event, fellows, attendance, onClose, onSaved }: {
             {eligible.length === 0 && <p className="text-sm text-gray-400">No tracked fellows found.</p>}
           </div>
         </div>
+        {saveError && <p className="mx-6 mb-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
         <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex gap-3">
           <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="flex-1 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50">
@@ -475,6 +489,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<TCEvent[]>([]);
   const [attendance, setAttendance] = useState<EventAttendance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'events' | 'fellows'>('overview');
   const [editingEvent, setEditingEvent] = useState<TCEvent | undefined>(undefined);
   const [showEventForm, setShowEventForm] = useState(false);
@@ -482,12 +497,23 @@ export default function EventsPage() {
   const logout = useCallback(async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/'; }, []);
 
   async function load() {
-    const [fr, er, ar] = await Promise.all([fetch('/api/fellows'), fetch('/api/events'), fetch('/api/attendance')]);
-    const [fd, ed, ad] = await Promise.all([fr.json(), er.json(), ar.json()]);
-    setFellows(Array.isArray(fd) ? fd : []);
-    setEvents(Array.isArray(ed) ? [...ed].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []);
-    setAttendance(Array.isArray(ad) ? ad : []);
-    setLoading(false);
+    setLoadError('');
+    try {
+      const [fr, er, ar] = await Promise.all([fetch('/api/fellows'), fetch('/api/events'), fetch('/api/attendance')]);
+      const [fd, ed, ad] = await Promise.all([fr.json().catch(() => null), er.json().catch(() => null), ar.json().catch(() => null)]);
+      // A failure never becomes an empty list, which would look like lost data.
+      if (!fr.ok || !er.ok || !ar.ok || !Array.isArray(fd) || !Array.isArray(ed) || !Array.isArray(ad)) {
+        throw new Error('One of the event requests failed');
+      }
+      setFellows(fd);
+      setEvents([...ed].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+      setAttendance(ad);
+    } catch (err) {
+      console.error('Failed to load events:', err);
+      setLoadError('Couldn\u2019t load events. Your data is safe in the Sheet; this is a loading problem.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -535,6 +561,11 @@ export default function EventsPage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-64 text-gray-400">Loading events…</div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+            <p className="text-sm text-red-700">{loadError}</p>
+            <button onClick={() => { setLoading(true); load(); }} className="px-4 py-2 text-sm rounded-lg bg-gray-900 text-white hover:bg-gray-700">Try again</button>
+          </div>
         ) : (
           <>
             {activeTab === 'overview' && <OverviewTab fellows={fellows} events={events} attendance={attendance} />}

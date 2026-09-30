@@ -222,7 +222,7 @@ carries over automatically once they move to Alumni.
 | Language | TypeScript |
 | Styling | Tailwind CSS |
 | Data | Google Sheets API v4 |
-| Auth | Password-gated cookie session |
+| Auth | Shared password; a signed, 7-day session cookie (`lib/auth.ts`); login attempts rate-limited |
 | Deployment | Vercel |
 
 ---
@@ -280,19 +280,27 @@ cd fellows_dashboard
 npm install
 ```
 
-**2. Create `.env.local`**
-```
-SPREADSHEET_ID=your_spreadsheet_id_here
-GCP_CLIENT_EMAIL=your-service-account@project.iam.gserviceaccount.com
-GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FORM_RESPONSES_URL=https://docs.google.com/spreadsheets/d/...
-DASHBOARD_PASSWORD=your_password_here
-```
+**2. Create `.env.local`** by copying `.env.local.template` and filling in real values. Never put real values in the template itself.
+
+| Setting | Required | What it's for |
+|---|---|---|
+| `SPREADSHEET_ID` | Yes | The dashboard's Google Sheet |
+| `GCP_CLIENT_EMAIL`, `GCP_PRIVATE_KEY` | Yes | The service account the dashboard signs in as |
+| `DASHBOARD_PASSWORD` | Yes | The shared staff password. With none set, nobody can log in. Changing it logs everyone out |
+| `AUTH_SECRET` | No | A long random string for signing login cookies. If unset, a key derived from `DASHBOARD_PASSWORD` is used |
+| `ACCOMPLISHMENT_SHEET_ID` | For the Accomplishments page | The Accomplishments workbook's Drive file ID |
+| `FORM_RESPONSES_URL` | For the sync script | The status report Google Form responses sheet |
+| `RESEND_API_KEY` | For streak emails | Resend key for the gift-card alert email |
+| `SHEETS_READ_WINDOW_MS` | No | How long sheet reads are cached, in ms (default 3000) |
+
+Set the same values wherever the dashboard is hosted (e.g. Vercel's Environment Variables).
 
 **3. Run**
 ```bash
 npm run dev
 ```
+
+`npm test` runs the logic checks in `scripts/`.
 
 Open [http://localhost:3000](http://localhost:3000).
 
@@ -304,7 +312,7 @@ The `sync_status_reports.py` script reads Google Form responses and marks each f
 
 ```bash
 python sync_status_reports.py        # syncs the previous month
-python sync_status_reports.py 3      # syncs a specific month (March)
+python sync_status_reports.py 2026 3 # syncs a specific month (March 2026)
 ```
 
 The script includes a 7-day grace period — submissions from the 1st through the 7th are attributed to the previous month and marked Late.

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak, CHECKIN_TYPES, todayISOET } from '@/lib/helpers';
+import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
@@ -140,13 +140,6 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
   );
 }
 
-const OFFBOARDING_TASKS: { label: string }[] = [
-  { label: 'Submitted Accomplishments document' },
-  { label: 'Completed exit interview' },
-  { label: 'Confirm final paycheck' },
-  { label: 'Offboard in Rippling' },
-  { label: 'Remove from #current-fellows-plus-tc Slack channel' },
-];
 
 const ONBOARDING_TASKS: { label: string; link?: string }[] = [
   { label: 'Offer sent' },
@@ -251,6 +244,8 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loadingCheckins, setLoadingCheckins] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [checkinsLoadError, setCheckinsLoadError] = useState(false);
+  const [reportsLoadError, setReportsLoadError] = useState(false);
   const [checkinsFetched, setCheckinsFetched] = useState(false);
   const [showCheckinForm, setShowCheckinForm] = useState(false);
   const [checkinForm, setCheckinForm] = useState({ date: todayISOET(), check_in_type: 'Email', staff_member: '', notes: '' });
@@ -298,13 +293,42 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const [moveDone, setMoveDone] = useState(false);
   const [moveError, setMoveError] = useState('');
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayISOET();
   const [showLogReport, setShowLogReport] = useState(false);
   const [logReportForm, setLogReportForm] = useState({ month: '', late: false, date_submitted: todayStr, notes: '' });
   const [logReportSaving, setLogReportSaving] = useState(false);
   const [logReportError, setLogReportError] = useState('');
   // Which month's log is awaiting a confirm click, and any failure to show.
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  // Deleting a logged check-in: two clicks, because there is no undo.
+  const [confirmDeleteCheckin, setConfirmDeleteCheckin] = useState<string | null>(null);
+  const [deletingCheckin, setDeletingCheckin] = useState<string | null>(null);
+  const [deleteCheckinError, setDeleteCheckinError] = useState('');
+
+  async function deleteCheckinLog(id: string) {
+    setDeletingCheckin(id);
+    setDeleteCheckinError('');
+    try {
+      const res = await fetch('/api/checkins', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setDeleteCheckinError(json.error || 'Could not delete the check-in. Please try again.');
+        return;
+      }
+      setCheckins(cs => cs.filter(c => c.id !== id));
+      setConfirmDeleteCheckin(null);
+      // Keep the card, badge and header count in step with the sheet.
+      if (typeof json.lastCheckIn === 'string') onFellowUpdate?.({ ...fellowRef.current, last_check_in: json.lastCheckIn });
+    } catch {
+      setDeleteCheckinError('Network error. Nothing was deleted.');
+    } finally {
+      setDeletingCheckin(null);
+    }
+  }
   const [removingMonth, setRemovingMonth] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState('');
 
@@ -352,37 +376,48 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const offboardingPct = Math.round((offboardingDone / offboardingTotal) * 100);
   const offboardingComplete = offboardingDone === offboardingTotal;
 
-  const toggleOffboardingTask = useCallback((idx: number) => {
-    setOffboardingSet(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx); else next.add(idx);
-      const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
-      fetch('/api/fellows/offboarding', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: fellow.id, offboarding_completed: completedStr }),
-      }).then(() => {
-        if (onFellowUpdate) onFellowUpdate({ ...fellow, offboarding_completed: completedStr });
-      }).catch(err => console.error('Failed to save offboarding:', err));
-      return next;
-    });
-  }, [fellow, onFellowUpdate]);
+  // The latest fellow, for callbacks that run after a save returns — spreading
+  // the `fellow` a callback captured could write back an older copy.
+  const fellowRef = useRef(fellow);
+  useEffect(() => { fellowRef.current = fellow; }, [fellow]);
+  const [checklistError, setChecklistError] = useState('');
 
-  const toggleOnboardingTask = useCallback((idx: number) => {
-    setCompletedSet(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx); else next.add(idx);
-      const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
-      fetch('/api/fellows/onboarding', {
+  /**
+   * Show the new checklist right away, then save it. If the save fails the
+   * checklist goes back to how it was and says so, instead of silently losing
+   * the change on the next reload.
+   */
+  const saveChecklist = useCallback(async (kind: 'onboarding' | 'offboarding', next: Set<number>, prev: Set<number>) => {
+    const setSet = kind === 'onboarding' ? setCompletedSet : setOffboardingSet;
+    const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
+    setSet(next);
+    setChecklistError('');
+    try {
+      const res = await fetch(`/api/fellows/${kind}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: fellow.id, onboarding_completed: completedStr }),
-      }).then(() => {
-        if (onFellowUpdate) onFellowUpdate({ ...fellow, onboarding_completed: completedStr });
-      }).catch(err => console.error('Failed to save onboarding:', err));
-      return next;
-    });
-  }, [fellow, onFellowUpdate]);
+        body: JSON.stringify({ id: fellowRef.current.id, [`${kind}_completed`]: completedStr }),
+      });
+      if (!res.ok) throw new Error(`save failed (${res.status})`);
+      onFellowUpdate?.({ ...fellowRef.current, [`${kind}_completed`]: completedStr });
+    } catch (err) {
+      console.error(`Failed to save ${kind}:`, err);
+      setSet(prev);
+      setChecklistError('That change wasn\u2019t saved, so the checklist was put back. Please try again.');
+    }
+  }, [onFellowUpdate]);
+
+  const toggleOffboardingTask = (idx: number) => {
+    const next = new Set(offboardingSet);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    saveChecklist('offboarding', next, offboardingSet);
+  };
+
+  const toggleOnboardingTask = (idx: number) => {
+    const next = new Set(completedSet);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    saveChecklist('onboarding', next, completedSet);
+  };
 
   const requiredMonths = useMemo(() => getRequiredReportMonths(fellow), [fellow]);
   const streakInfo = useMemo(() => calculateStreak(reports, requiredMonths), [reports, requiredMonths]);
@@ -390,11 +425,21 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   useEffect(() => {
     if (tab === 'checkins' && !checkinsFetched) {
       setLoadingCheckins(true);
-      fetch(`/api/checkins?fellowId=${fellow.id}`).then(r => r.json()).then(d => { setCheckins(Array.isArray(d) ? d : []); setLoadingCheckins(false); setCheckinsFetched(true); });
+      setCheckinsLoadError(false);
+      fetch(`/api/checkins?fellowId=${fellow.id}`)
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => { setCheckins(Array.isArray(d) ? d : []); setCheckinsFetched(true); })
+        .catch(() => setCheckinsLoadError(true))
+        .finally(() => setLoadingCheckins(false));
     }
     if (tab === 'reports' && !reportsFetched && fellow.requires_monthly_reports) {
       setLoadingReports(true);
-      fetch(`/api/status-reports?fellowId=${fellow.id}`).then(r => r.json()).then(d => { setReports(Array.isArray(d) ? d : []); setLoadingReports(false); setReportsFetched(true); });
+      setReportsLoadError(false);
+      fetch(`/api/status-reports?fellowId=${fellow.id}`)
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => { setReports(Array.isArray(d) ? d : []); setReportsFetched(true); })
+        .catch(() => setReportsLoadError(true))
+        .finally(() => setLoadingReports(false));
     }
   }, [tab, fellow.id, fellow.requires_monthly_reports, checkinsFetched, reportsFetched]);
 
@@ -408,28 +453,33 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
     if (!logReportForm.month) { setLogReportError('Please select a month.'); return; }
     setLogReportSaving(true);
     setLogReportError('');
-    const res = await fetch('/api/status-reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fellow_id: fellow.id,
-        fellow_name: fellow.name,
-        month: logReportForm.month,
-        late: logReportForm.late,
-        date_submitted: logReportForm.date_submitted,
-        notes: logReportForm.notes,
-        report_start_date: fellow.report_start_date,
-        report_end_month: fellow.report_end_month,
-      }),
-    });
-    setLogReportSaving(false);
-    if (!res.ok) { setLogReportError('Failed to save. Please try again.'); return; }
-    // Refresh reports
-    const updated = await fetch(`/api/status-reports?fellowId=${fellow.id}`).then(r => r.json());
-    if (Array.isArray(updated)) setReports(updated);
-    setShowLogReport(false);
-    setLogReportForm({ month: '', late: false, date_submitted: todayStr, notes: '' });
+    try {
+      const res = await fetch('/api/status-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fellow_id: fellow.id,
+          fellow_name: fellow.name,
+          month: logReportForm.month,
+          late: logReportForm.late,
+          date_submitted: logReportForm.date_submitted,
+          notes: logReportForm.notes,
+        }),
+      });
+      if (!res.ok) { setLogReportError('Failed to save. Please try again.'); return; }
+      // Refresh reports. The save already worked, so a failed refresh just
+      // leaves the old list up rather than reporting an error.
+      const updated = await fetch(`/api/status-reports?fellowId=${fellow.id}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+      if (Array.isArray(updated)) setReports(updated);
+      setShowLogReport(false);
+      setLogReportForm({ month: '', late: false, date_submitted: todayStr, notes: '' });
+    } catch {
+      setLogReportError('Network error. Please try again.');
+    } finally {
+      setLogReportSaving(false);
+    }
   }
+
 
   const days = daysSince(fellow.last_check_in);
   const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
@@ -498,19 +548,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             <div>
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs text-gray-500">{onboardingDone} of {onboardingTotal} tasks complete</p>
+                {checklistError && <p className="text-xs text-red-700">{checklistError}</p>}
                 <button
                   onClick={() => {
                     const allDone = onboardingDone === onboardingTotal;
                     const next = allDone ? new Set<number>() : new Set(ONBOARDING_TASKS.map((_, i) => i));
-                    setCompletedSet(next);
-                    const completedStr = allDone ? '' : Array.from(next).join(',');
-                    fetch('/api/fellows/onboarding', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ id: fellow.id, onboarding_completed: completedStr }),
-                    }).then(() => {
-                      if (onFellowUpdate) onFellowUpdate({ ...fellow, onboarding_completed: completedStr });
-                    }).catch(err => console.error('Failed to save onboarding:', err));
+                    saveChecklist('onboarding', next, completedSet);
                   }}
                   className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors">
                   {onboardingDone === onboardingTotal ? 'Uncheck all' : 'Check all'}
@@ -524,7 +567,9 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                   const done = completedSet.has(idx);
                   return (
                     <div key={idx} onClick={() => toggleOnboardingTask(idx)}
-                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none
+                      role="checkbox" aria-checked={done} tabIndex={0}
+                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOnboardingTask(idx); } }}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900
                         ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                       <div className={`w-4.5 h-4.5 mt-0.5 flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
                         ${done ? 'bg-green-500 text-white' : 'border border-gray-300 bg-white'}`}
@@ -649,6 +694,8 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 <p className="text-sm text-gray-400">This fellow does not require monthly status reports.</p>
               ) : loadingReports ? (
                 <p className="text-sm text-gray-400">Loading reports…</p>
+              ) : reportsLoadError ? (
+                <p className="text-sm text-red-700">Couldn&rsquo;t load reports. Close and reopen this fellow to try again.</p>
               ) : (
                 <>
                   {/* Log Report Modal */}
@@ -879,16 +926,37 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 </div>
               )}
               {loadingCheckins ? <p className="text-sm text-gray-400">Loading check-ins…</p>
+                : checkinsLoadError ? <p className="text-sm text-red-700">Couldn&rsquo;t load check-ins. Close and reopen this fellow to try again.</p>
                 : checkins.length === 0 ? <p className="text-sm text-gray-400">No check-ins recorded yet.</p>
                 : (
                   <div className="space-y-2">
                     {checkins.map(c => (
                       <div key={c.id} className="bg-gray-50 rounded-lg px-4 py-3 border-l-4 border-blue-400">
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between gap-3 mb-1">
                           <span className="text-sm font-medium text-gray-800">{c.date} · {c.check_in_type}</span>
-                          <span className="text-xs text-gray-400">{c.staff_member}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-400">{c.staff_member}</span>
+                            {confirmDeleteCheckin === c.id ? (
+                              <span className="flex items-center gap-2">
+                                <button onClick={() => { setConfirmDeleteCheckin(null); setDeleteCheckinError(''); }} disabled={deletingCheckin === c.id}
+                                  className="text-xs text-gray-500 hover:text-gray-800">Cancel</button>
+                                <button onClick={() => deleteCheckinLog(c.id)} disabled={deletingCheckin === c.id}
+                                  className="text-xs font-semibold text-red-700 hover:text-red-900 disabled:opacity-50">
+                                  {deletingCheckin === c.id ? 'Deleting…' : 'Confirm delete'}
+                                </button>
+                              </span>
+                            ) : (
+                              <button onClick={() => { setConfirmDeleteCheckin(c.id); setDeleteCheckinError(''); }}
+                                className="text-xs text-gray-400 hover:text-red-700" aria-label={`Delete the ${c.date} check-in`}>
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {c.notes && <p className="text-sm text-gray-600">{c.notes}</p>}
+                        {confirmDeleteCheckin === c.id && deleteCheckinError && (
+                          <p className="mt-2 text-xs text-red-700">{deleteCheckinError}</p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -900,19 +968,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             <div>
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs text-gray-500">{offboardingDone} of {offboardingTotal} tasks complete</p>
+                {checklistError && <p className="text-xs text-red-700">{checklistError}</p>}
                 <button
                   onClick={() => {
                     const allDone = offboardingComplete;
                     const next = allDone ? new Set<number>() : new Set(OFFBOARDING_TASKS.map((_, i) => i));
-                    setOffboardingSet(next);
-                    const completedStr = allDone ? '' : Array.from(next).join(',');
-                    fetch('/api/fellows/offboarding', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ id: fellow.id, offboarding_completed: completedStr }),
-                    }).then(() => {
-                      if (onFellowUpdate) onFellowUpdate({ ...fellow, offboarding_completed: completedStr });
-                    }).catch(err => console.error('Failed to save offboarding:', err));
+                    saveChecklist('offboarding', next, offboardingSet);
                   }}
                   className="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">
                   {offboardingComplete ? 'Uncheck all' : 'Check all'}
@@ -931,7 +992,9 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                   const done = offboardingSet.has(idx);
                   return (
                     <div key={idx} onClick={() => toggleOffboardingTask(idx)}
-                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none
+                      role="checkbox" aria-checked={done} tabIndex={0}
+                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOffboardingTask(idx); } }}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900
                         ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                       <div className={`flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
                         ${done ? 'bg-green-500 text-white' : 'border border-gray-300 bg-white'}`}
@@ -1062,6 +1125,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
 export default function FellowsPage() {
   const [fellows, setFellows] = useState<Fellow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedFellow, setSelectedFellow] = useState<Fellow | null>(null);
   // Which tab the View/Edit modal opens on, and whether it should drop
   // straight into edit mode for that tab — the card's "Edit" button jumps
@@ -1074,9 +1138,11 @@ export default function FellowsPage() {
   // silently wrong data into the sheet until someone remembers to fix it.
   const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat' });
   const [addFellowSaving, setAddFellowSaving] = useState(false);
+  const [addFellowError, setAddFellowError] = useState('');
   const [editFellow, setEditFellow] = useState<Fellow | null>(null);
   const [editFellowForm, setEditFellowForm] = useState<Partial<Fellow>>({});
   const [editFellowSaving, setEditFellowSaving] = useState(false);
+  const [editFellowError, setEditFellowError] = useState('');
   // Two clicks, because there is no undo — the row is deleted from the sheet.
   const [confirmDeleteFellow, setConfirmDeleteFellow] = useState(false);
   const [deleteFellowSaving, setDeleteFellowSaving] = useState(false);
@@ -1089,13 +1155,35 @@ export default function FellowsPage() {
   const [cohortFilter, setCohortFilter] = useState('All Cohorts');
   const [sortBy, setSortBy] = useState<SortOption>('Cohort (newest first)');
 
+  /** GET the fellows list, or throw. A failure never becomes an empty list, which would look like lost data. */
+  async function getFellows(): Promise<Fellow[]> {
+    const res = await fetch('/api/fellows');
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !Array.isArray(data)) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async function loadFellows() {
+    setLoading(true);
+    setLoadError('');
+    try {
+      setFellows(await getFellows());
+    } catch (err) {
+      console.error('Failed to load fellows:', err);
+      setLoadError('Couldn\u2019t load fellows. Your data is safe in the Sheet; this is a loading problem.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const logout = useCallback(async () => {
     await fetch('/api/auth', { method: 'DELETE' });
     window.location.href = '/';
   }, []);
 
   useEffect(() => {
-    fetch('/api/fellows').then(r => r.json()).then(d => { setFellows(Array.isArray(d) ? d : []); setLoading(false); }).catch(() => setLoading(false));
+    loadFellows(); // once, on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeFellows = useMemo(() => fellows.filter(f => !INACTIVE_STATUSES.includes(f.status)), [fellows]);
@@ -1158,10 +1246,10 @@ export default function FellowsPage() {
       switch (sortBy) {
         case 'Name (A–Z)': return a.name.localeCompare(b.name);
         case 'Name (Z–A)': return b.name.localeCompare(a.name);
-        case 'Last Check-in (oldest first)': return (a.last_check_in || '').localeCompare(b.last_check_in || '');
-        case 'Last Check-in (newest first)': return (b.last_check_in || '').localeCompare(a.last_check_in || '');
-        case 'End Date (soonest first)': return (a.end_date || '').localeCompare(b.end_date || '');
-        case 'End Date (latest first)': return (b.end_date || '').localeCompare(a.end_date || '');
+        case 'Last Check-in (oldest first)': return dateSortKey(a.last_check_in).localeCompare(dateSortKey(b.last_check_in));
+        case 'Last Check-in (newest first)': return dateSortKey(b.last_check_in).localeCompare(dateSortKey(a.last_check_in));
+        case 'End Date (soonest first)': return dateSortKey(a.end_date).localeCompare(dateSortKey(b.end_date));
+        case 'End Date (latest first)': return dateSortKey(b.end_date).localeCompare(dateSortKey(a.end_date));
         case 'Cohort (newest first)': return parseCohortDate(b.cohort).getTime() - parseCohortDate(a.cohort).getTime();
         case 'Cohort (oldest first)': return parseCohortDate(a.cohort).getTime() - parseCohortDate(b.cohort).getTime();
         case 'Priority (Flagged first)': { const p: Record<string, number> = { Flagged: 0, 'Ending Soon': 1, Active: 2 }; return (p[a.status] ?? 3) - (p[b.status] ?? 3); }
@@ -1194,6 +1282,11 @@ export default function FellowsPage() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         {loading ? (
           <div className="flex items-center justify-center h-64 text-gray-400">Loading fellows…</div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+            <p className="text-sm text-red-700">{loadError}</p>
+            <button onClick={loadFellows} className="px-4 py-2 text-sm rounded-lg bg-gray-900 text-white hover:bg-gray-700">Try again</button>
+          </div>
         ) : (
           <>
             <div className="grid grid-cols-7 gap-3 mb-8">
@@ -1279,7 +1372,6 @@ export default function FellowsPage() {
                 ['Cohort', 'cohort', 'text'],
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
-                ['Last Check-in', 'last_check_in', 'text'],
                 ['Education', 'education', 'text'],
                 ['Report Start Date', 'report_start_date', 'text'],
                 ['Report End Month', 'report_end_month', 'text'],
@@ -1290,6 +1382,10 @@ export default function FellowsPage() {
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
                 </div>
               ))}
+              <div>
+                <p className="block text-xs font-medium text-gray-500 mb-1">Last Check-in</p>
+                <p className="px-3 py-2 text-sm text-gray-600">{editFellowForm.last_check_in || '\u2014'} <span className="text-xs text-gray-400">· updates when a check-in is logged</span></p>
+              </div>
               {([
                 ['Fellow Type', 'fellow_type', ['Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
@@ -1355,19 +1451,28 @@ export default function FellowsPage() {
                   Delete Fellow
                 </button>
               )}
-              <div className="flex gap-3">
-                <button onClick={() => setEditFellow(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+              <div className="flex items-center gap-3">
+                {editFellowError && <p className="text-sm text-red-700">{editFellowError}</p>}
+                <button onClick={() => { setEditFellow(null); setEditFellowError(''); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
                 <button disabled={editFellowSaving} onClick={async () => {
                   setEditFellowSaving(true);
+                  setEditFellowError('');
                   try {
-                    await fetch('/api/fellows', {
+                    const res = await fetch('/api/fellows', {
                       method: 'PATCH',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ id: editFellow.id, ...editFellowForm }),
                     });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok || !json.ok) {
+                      setEditFellowError(json.error || 'Could not save. Please try again.');
+                      return; // keep the form open so nothing typed is lost
+                    }
                     setEditFellow(null);
-                    const res = await fetch('/api/fellows');
-                    setFellows(await res.json());
+                    // The save worked; if the refresh fails, keep the list on screen.
+                    getFellows().then(setFellows).catch((err) => console.error('Refresh after save failed:', err));
+                  } catch {
+                    setEditFellowError('Network error. Please try again.');
                   } finally {
                     setEditFellowSaving(false);
                   }
@@ -1440,16 +1545,25 @@ export default function FellowsPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => setShowAddFellow(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+              {addFellowError && <p className="text-sm text-red-700 mr-auto">{addFellowError}</p>}
+              <button onClick={() => { setShowAddFellow(false); setAddFellowError(''); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
               <button disabled={addFellowSaving || !addFellowForm.name} onClick={async () => {
                 setAddFellowSaving(true);
+                setAddFellowError('');
                 try {
-                  await fetch('/api/fellows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addFellowForm) });
+                  const res = await fetch('/api/fellows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addFellowForm) });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok || !json.ok) {
+                    setAddFellowError(json.error || 'Could not add the fellow. Please try again.');
+                    return;
+                  }
                   setShowAddFellow(false);
-                  setAddFellowForm({ status: 'Active', fellow_type: 'CIF', party: 'Democrat', chamber: 'House' });
-                  const res = await fetch('/api/fellows');
-                  setFellows(await res.json());
+                  // Same defaults as the initial form: no Chamber (see above).
+                  setAddFellowForm({ status: 'Active', fellow_type: 'CIF', party: 'Democrat' });
+                  getFellows().then(setFellows).catch((err) => console.error('Refresh after add failed:', err));
+                } catch {
+                  setAddFellowError('Network error. Please try again.');
                 } finally {
                   setAddFellowSaving(false);
                 }

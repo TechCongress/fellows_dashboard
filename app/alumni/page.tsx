@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Alumni, Accomplishment } from '@/types';
-import { parseCohortDate } from '@/lib/helpers';
+import { parseCohortDate, dateSortKey } from '@/lib/helpers';
 import { SECTOR_POLICY, GOVERNMENT_BRANCHES, isGovernmentSector } from '@/lib/career-pathway';
 import { CareerHistorySection } from '@/components/career-history';
 import { AlumniPathwayTab } from '@/components/pathway-ui';
@@ -526,8 +526,8 @@ function AllAlumniTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a
       case 'Cohort (oldest first)': list.sort((a, b) => parseCohortDate(a.cohort).getTime() - parseCohortDate(b.cohort).getTime()); break;
       case 'Name (A-Z)': list.sort((a, b) => a.name.localeCompare(b.name)); break;
       case 'Name (Z-A)': list.sort((a, b) => b.name.localeCompare(a.name)); break;
-      case 'Last Engaged (newest first)': list.sort((a, b) => (b.last_engaged || '').localeCompare(a.last_engaged || '')); break;
-      case 'Last Engaged (oldest first)': list.sort((a, b) => (a.last_engaged || '').localeCompare(b.last_engaged || '')); break;
+      case 'Last Engaged (newest first)': list.sort((a, b) => dateSortKey(b.last_engaged).localeCompare(dateSortKey(a.last_engaged))); break;
+      case 'Last Engaged (oldest first)': list.sort((a, b) => dateSortKey(a.last_engaged).localeCompare(dateSortKey(b.last_engaged))); break;
       case 'Sector': list.sort((a, b) => (a.sector || '').localeCompare(b.sector || '')); break;
     }
     return list;
@@ -664,6 +664,7 @@ function ServedTab({ alumni, onView, onEdit }: { alumni: Alumni[]; onView: (a: A
 export default function AlumniPage() {
   const [alumni, setAlumni] = useState<Alumni[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'hill' | 'served'>('all');
   const [viewing, setViewing] = useState<Alumni | null>(null);
   const [editing, setEditing] = useState<Alumni | undefined>(undefined);
@@ -674,9 +675,19 @@ export default function AlumniPage() {
   async function load() {
     // Role and sector fields arrive already derived from Career History —
     // see fetchAlumni — so there's no separate history request here.
-    const data = await (await fetch('/api/alumni')).json();
-    setAlumni(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setLoadError('');
+    try {
+      const res = await fetch('/api/alumni');
+      const data = await res.json().catch(() => null);
+      // A failure never becomes an empty list, which would look like lost data.
+      if (!res.ok || !Array.isArray(data)) throw new Error(data?.error || `HTTP ${res.status}`);
+      setAlumni(data);
+    } catch (err) {
+      console.error('Failed to load alumni:', err);
+      setLoadError('Couldn\u2019t load alumni. Your data is safe in the Sheet; this is a loading problem.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -724,6 +735,11 @@ export default function AlumniPage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-64 text-gray-400">Loading alumni…</div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+            <p className="text-sm text-red-700">{loadError}</p>
+            <button onClick={() => { setLoading(true); load(); }} className="px-4 py-2 text-sm rounded-lg bg-gray-900 text-white hover:bg-gray-700">Try again</button>
+          </div>
         ) : (
           <>
             {activeTab === 'all'    && <AllAlumniTab alumni={alumni} onView={setViewing} onEdit={a => { setEditing(a); setShowForm(true); }} />}

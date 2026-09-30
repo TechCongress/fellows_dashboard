@@ -1,21 +1,27 @@
-import { cookies } from 'next/headers';
+import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchEventAttendance, saveAttendanceBatch } from '@/lib/sheets';
 
-async function authed() {
-  const store = await cookies();
-  return store.get('tc-auth')?.value === 'authenticated';
-}
-
 export async function GET() {
-  if (!await authed()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const attendance = await fetchEventAttendance();
-  return NextResponse.json(attendance);
+  if (!(await isAuthed())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    return NextResponse.json(await fetchEventAttendance());
+  } catch (err) {
+    console.error('Failed to fetch attendance:', err);
+    return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
-  if (!await authed()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { eventId, attendanceMap } = await req.json();
-  const ok = await saveAttendanceBatch(eventId, attendanceMap);
-  return NextResponse.json({ ok });
+  if (!(await isAuthed())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const { eventId, attendanceMap } = await req.json();
+    if (!eventId) return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
+    const ok = await saveAttendanceBatch(eventId, attendanceMap);
+    if (!ok) return NextResponse.json({ error: 'Attendance was not saved. Please try again.' }, { status: 500 });
+    return NextResponse.json({ ok });
+  } catch (err) {
+    console.error('Failed to save attendance:', err);
+    return NextResponse.json({ error: 'Attendance was not saved. Please try again.' }, { status: 500 });
+  }
 }
