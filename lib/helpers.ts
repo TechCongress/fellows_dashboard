@@ -31,23 +31,115 @@ export function isAISF(fellow: Fellow): boolean {
   return (fellow.fellow_type || '').includes('AI Security');
 }
 
-export function getRequiredReportMonths(fellow: Fellow): string[] {
-  if (!fellow.requires_monthly_reports || !fellow.report_start_date) return [];
-  const start = new Date(fellow.report_start_date);
-  if (isNaN(start.getTime())) return [];
-  let endMonthStr = fellow.report_end_month;
-  if (!endMonthStr) {
-    endMonthStr = (fellow.fellow_type || '').includes('Senior') ? 'Nov 2026' : 'Sep 2026';
+// ── Monthly report schedule ─────────────────────────────────────────────────
+//
+// A fellow owes a monthly status report for each month from their Report
+// Start Date through their Report End Month. Their final month is covered by
+// their Accomplishments document instead, which is tracked by the offboarding
+// task "Submitted Accomplishments document" (ticked = submitted; it has no
+// late state).
+
+/**
+ * Whether the Accomplishments document counts toward the on-time streak and
+ * gift cards. Not decided yet; off keeps every fellow's streak exactly as it
+ * was before the document was added to the schedule.
+ */
+export const ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK = false;
+
+export const ACCOMPLISHMENTS_TASK_LABEL = 'Submitted Accomplishments document';
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthIndex = (d: Date) => d.getFullYear() * 12 + d.getMonth();
+const monthLabel = (i: number) => `${SHORT_MONTHS[i % 12]} ${Math.floor(i / 12)}`;
+
+/**
+ * A month as typed in the sheet, as a month index (year * 12 + month), or null.
+ * Accepts "Sep 2026", "September 2026", any capitalization, and the forms a
+ * cell takes once Sheets has turned it into a real date: "9/1/2026",
+ * "2026-09-01", "2026-09".
+ */
+function parseMonthValue(value: string | undefined): number | null {
+  const v = (value || '').trim();
+  if (!v) return null;
+  let m = v.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+  if (m) return Number(m[1]) * 12 + Number(m[2]) - 1;
+  m = v.match(/^(\d{1,2})\/\d{1,2}\/(\d{4})$/);
+  if (m) return Number(m[2]) * 12 + Number(m[1]) - 1;
+  m = v.match(/^([A-Za-z]+)\.?\s+(\d{4})$/);
+  if (m) {
+    const i = SHORT_MONTHS.findIndex((n) => m![1].toLowerCase().startsWith(n.toLowerCase()));
+    return i === -1 ? null : Number(m[2]) * 12 + i;
   }
-  const end = new Date(`${endMonthStr} 1`);
-  if (isNaN(end.getTime())) return [];
-  const months: string[] = [];
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-  while (cursor <= end) {
-    months.push(cursor.toLocaleString('en-US', { month: 'short', year: 'numeric' }));
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return months;
+  return null;
+}
+
+export interface ReportSchedule {
+  /** Months that need a monthly status report, e.g. "Mar 2027". */
+  reportMonths: string[];
+  /** The month covered by the Accomplishments document, or null when the End Date isn't set. */
+  docMonth: string | null;
+  /** Where the last report month came from: the Report End Month, the End Date, or nowhere. */
+  endSource: 'report_end_month' | 'end_date' | 'none';
+}
+
+type ScheduleInput = Pick<Fellow, 'requires_monthly_reports' | 'report_start_date' | 'report_end_month' | 'end_date'>;
+
+/**
+ * - Reports run from the Report Start Month through the Report End
+ *   Month. A filled-in Report End Month always wins, even past the End Date,
+ *   so exceptions can be set by hand. When it's blank, reports run through
+ *   the month before the End Date.
+ * - The month the fellowship ends (the End Date's month) is covered by the
+ *   Accomplishments document, but only when it comes after the last report
+ *   month. A custom end month that runs past the End Date has no document row.
+ */
+export function getReportSchedule(fellow: Partial<ScheduleInput>): ReportSchedule {
+  const none: ReportSchedule = { reportMonths: [], docMonth: null, endSource: 'none' };
+  if (!fellow.requires_monthly_reports || !fellow.report_start_date) return none;
+  // "March 2026", "Mar 2026", or an older full date like "03/01/2026"; only the month matters.
+  const first = parseMonthValue(fellow.report_start_date);
+  if (first === null) return none;
+
+  const endDate = fellow.end_date ? parseDate(fellow.end_date) : null;
+  const docIdx = endDate ? monthIndex(endDate) : null;
+
+  let last: number | null = null;
+  let endSource: ReportSchedule['endSource'] = 'none';
+  const explicit = parseMonthValue(fellow.report_end_month);
+  if (explicit !== null) { last = explicit; endSource = 'report_end_month'; }
+  else if (docIdx !== null) { last = docIdx - 1; endSource = 'end_date'; }
+
+  const reportMonths: string[] = [];
+  if (last !== null) for (let i = first; i <= last; i++) reportMonths.push(monthLabel(i));
+  const lastReport = last !== null && last >= first ? last : first - 1;
+  const docMonth = docIdx !== null && docIdx > lastReport && docIdx >= first ? monthLabel(docIdx) : null;
+  return { reportMonths, docMonth, endSource };
+}
+
+/** The months that need a monthly status report. See getReportSchedule. */
+export function getRequiredReportMonths(fellow: Partial<ScheduleInput>): string[] {
+  return getReportSchedule(fellow).reportMonths;
+}
+
+/** Whether the offboarding task for the Accomplishments document is ticked. */
+export function accomplishmentsDocSubmitted(offboardingCompleted: string | undefined): boolean {
+  const i = OFFBOARDING_TASKS.findIndex((t) => t.label === ACCOMPLISHMENTS_TASK_LABEL);
+  if (i === -1) return false;
+  return (offboardingCompleted || '').split(',').map((x) => x.trim()).includes(String(i));
+}
+
+/**
+ * The fellow's streak and gift cards. With ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK
+ * on, the document month counts as an on-time report once its task is ticked.
+ */
+export function reportStreak(fellow: Partial<ScheduleInput> & { offboarding_completed?: string }, reports: StatusReport[]): StreakInfo {
+  const { reportMonths, docMonth } = getReportSchedule(fellow);
+  if (!ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK || !docMonth) return calculateStreak(reports, reportMonths);
+  const docReport: StatusReport = {
+    id: 'accomplishments-doc', fellow_id: '', fellow_name: '', month: docMonth,
+    submitted: accomplishmentsDocSubmitted(fellow.offboarding_completed), date_submitted: '', notes: '', late: false,
+  };
+  return calculateStreak([...reports, docReport], [...reportMonths, docMonth]);
 }
 
 export interface StreakInfo {

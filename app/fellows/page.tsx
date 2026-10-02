@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getRequiredReportMonths, calculateStreak, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
+import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_LABEL, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
@@ -190,6 +190,33 @@ function SectionEditButton({ onClick }: { onClick: () => void }) {
 }
 
 type EditableSection = 'contact' | 'placement';
+
+/**
+ * Under "Requires monthly status reports": says which months will be tracked,
+ * using the same rules as the Reports tab, so a blank or mistyped end month is
+ * caught while the form is still open.
+ */
+function ReportScheduleNote({ fellow }: { fellow: Partial<Fellow> }) {
+  const { reportMonths, docMonth, endSource } = getReportSchedule({ ...fellow, requires_monthly_reports: true });
+  const range = reportMonths.length ? `${reportMonths[0]} – ${reportMonths[reportMonths.length - 1]}` : '';
+  const doc = docMonth ? `, then the Accomplishments document for ${docMonth}` : '';
+  let text: string, tone: string;
+  if (!fellow.report_start_date) {
+    text = 'Add a Report Start Month (e.g. \u201cMarch 2026\u201d) to start tracking reports.'; tone = 'text-amber-600';
+  } else if (fellow.report_end_month && endSource !== 'report_end_month') {
+    text = `Report End Month \u201c${fellow.report_end_month}\u201d isn\u2019t a month the dashboard recognizes. Use a month and year, like \u201cSeptember 2026\u201d.`; tone = 'text-red-700';
+  } else if (!reportMonths.length) {
+    text = endSource === 'none'
+      ? 'Set a Report End Month or an End Date. Without one, no report months will be tracked for this fellow.'
+      : 'The end month is before reports start, so no report months will be tracked. Check the dates above.';
+    tone = 'text-red-700';
+  } else if (endSource === 'end_date') {
+    text = `Report End Month is blank, so reports are tracked ${range} (the month before the End Date)${doc}.`; tone = 'text-amber-600';
+  } else {
+    text = `Reports are tracked ${range}${doc}.`; tone = 'text-gray-500';
+  }
+  return <p className={`col-span-2 -mt-2 text-xs ${tone}`}>{text}</p>;
+}
 
 function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditSection, onEditAll }: {
   fellow: Fellow;
@@ -419,8 +446,20 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
     saveChecklist('onboarding', next, completedSet);
   };
 
-  const requiredMonths = useMemo(() => getRequiredReportMonths(fellow), [fellow]);
-  const streakInfo = useMemo(() => calculateStreak(reports, requiredMonths), [reports, requiredMonths]);
+  const schedule = useMemo(() => getReportSchedule(fellow), [fellow]);
+  const requiredMonths = schedule.reportMonths;
+  // The checklist as shown right now, so ticking the document task updates
+  // its row (and the streak, if the document counts) without a reload.
+  const offboardingStr = useMemo(() => Array.from(offboardingSet).sort((a, b) => a - b).join(','), [offboardingSet]);
+  const docSubmitted = accomplishmentsDocSubmitted(offboardingStr);
+  const streakInfo = useMemo(() => reportStreak({ ...fellow, offboarding_completed: offboardingStr }, reports), [fellow, offboardingStr, reports]);
+  // Every month to list: the schedule, plus any logged report outside it, so a
+  // rule change or a date fix never hides a report that was logged.
+  const listedMonths = useMemo(() => {
+    const key = (m: string) => { const d = new Date(`${m} 1`); return isNaN(d.getTime()) ? 0 : d.getFullYear() * 12 + d.getMonth(); };
+    const extra = reports.map(r => r.month).filter(m => m && !requiredMonths.includes(m) && m !== schedule.docMonth);
+    return [...new Set([...requiredMonths, ...extra])].sort((a, b) => key(a) - key(b));
+  }, [reports, requiredMonths, schedule.docMonth]);
 
   useEffect(() => {
     if (tab === 'checkins' && !checkinsFetched) {
@@ -785,8 +824,10 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    {requiredMonths.map(month => {
+                    {listedMonths.map(month => {
                       const report = submittedMap[month];
+                      const offSchedule = !requiredMonths.includes(month);
+                      const offTag = offSchedule && <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">Outside schedule</span>;
                       const now = new Date();
                       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
                       const reportMonthDate = new Date(`${month} 1`);
@@ -827,6 +868,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                           <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-yellow-50 border-l-4 border-yellow-500">
                             <span className="text-yellow-800 font-semibold text-sm">⏰ {month}</span>
                             <span className="text-yellow-700 text-sm">Submitted late on {report.date_submitted} — does not count toward streak</span>
+                            {offTag}
                             {removeControl}
                           </div>
                           {confirmRemove === month && removeError && (
@@ -839,6 +881,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                           <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-green-50 border-l-4 border-green-500">
                             <span className="text-green-800 font-semibold text-sm">✅ {month}</span>
                             <span className="text-gray-500 text-sm">Submitted {report.date_submitted}</span>
+                            {offTag}
                             {removeControl}
                           </div>
                           {confirmRemove === month && removeError && (
@@ -865,6 +908,35 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                         </div>
                       );
                     })}
+                    {schedule.docMonth && (
+                      <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border-l-4 ${docSubmitted ? 'bg-green-50 border-green-500' : 'bg-violet-50 border-violet-400'}`}>
+                        <span className={`font-semibold text-sm ${docSubmitted ? 'text-green-800' : 'text-violet-800'}`}>{docSubmitted ? '✅' : '📄'} {schedule.docMonth}</span>
+                        <span className="text-sm text-gray-600">
+                          Accomplishments document{' '}
+                          {docSubmitted
+                            ? <span className="text-gray-500">— submitted (ticked in Offboarding)</span>
+                            : <span className="text-gray-500">— covers the final month. Mark it submitted once it&rsquo;s in.</span>}
+                        </span>
+                        <span className="ml-auto flex items-center gap-3 flex-shrink-0">
+                          {!ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK && <span className="text-[11px] text-gray-400 whitespace-nowrap">not counted in streak</span>}
+                          {/* Ticks the same Offboarding task, through the same save, so the two never disagree. */}
+                          <button
+                            onClick={() => {
+                              const i = OFFBOARDING_TASKS.findIndex(t => t.label === ACCOMPLISHMENTS_TASK_LABEL);
+                              if (i === -1) return;
+                              const next = new Set(offboardingSet);
+                              if (docSubmitted) next.delete(i); else next.add(i);
+                              saveChecklist('offboarding', next, offboardingSet);
+                            }}
+                            className={docSubmitted
+                              ? 'text-xs text-gray-500 hover:text-gray-900'
+                              : 'px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-700'}>
+                            {docSubmitted ? 'Undo' : 'Mark as submitted'}
+                          </button>
+                        </span>
+                      </div>
+                    )}
+                    {schedule.docMonth && checklistError && <p className="text-xs text-red-700 px-3">{checklistError}</p>}
                   </div>
                 </>
               )}
@@ -1373,7 +1445,7 @@ export default function FellowsPage() {
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
                 ['Education', 'education', 'text'],
-                ['Report Start Date', 'report_start_date', 'text'],
+                ['Report Start Month', 'report_start_date', 'text'],
                 ['Report End Month', 'report_end_month', 'text'],
               ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
                 <div key={field}>
@@ -1407,6 +1479,7 @@ export default function FellowsPage() {
                   className="rounded border-gray-300" />
                 <label htmlFor="editReqReports" className="text-sm text-gray-700">Requires monthly status reports</label>
               </div>
+              {editFellowForm.requires_monthly_reports && <ReportScheduleNote fellow={editFellowForm} />}
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
                 <textarea value={editFellowForm.notes || ''} onChange={e => setEditFellowForm(f => ({ ...f, notes: e.target.value }))} rows={3}
@@ -1504,7 +1577,7 @@ export default function FellowsPage() {
                 ['Start Date', 'start_date', 'text'],
                 ['End Date', 'end_date', 'text'],
                 ['Education', 'education', 'text'],
-                ['Report Start Date', 'report_start_date', 'text'],
+                ['Report Start Month', 'report_start_date', 'text'],
                 ['Report End Month', 'report_end_month', 'text'],
               ] as [string, keyof Fellow, string][]).map(([label, field, type]) => (
                 <div key={field}>
@@ -1534,11 +1607,7 @@ export default function FellowsPage() {
                   className="rounded border-gray-300" />
                 <label htmlFor="addReqReports" className="text-sm text-gray-700">Requires monthly status reports</label>
               </div>
-              {addFellowForm.requires_monthly_reports && !addFellowForm.report_end_month && (
-                <p className="col-span-2 -mt-2 text-xs text-amber-600">
-                  Set a Report End Month above — leaving it blank means no report months will ever be tracked for this fellow.
-                </p>
-              )}
+              {addFellowForm.requires_monthly_reports && <ReportScheduleNote fellow={addFellowForm} />}
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
                 <textarea value={addFellowForm.notes || ''} onChange={e => setAddFellowForm(f => ({ ...f, notes: e.target.value }))} rows={3}
