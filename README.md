@@ -24,6 +24,10 @@ Log and track all fellow check-ins over time (Email, Phone, Zoom, In-person, Sla
 #### Monthly Status Reports
 Track monthly report submissions with on-time/late flags and streak counters. Reports can be synced automatically from Google Form responses via the `sync_status_reports.py` script, or marked manually from the fellow's modal.
 
+**Which months need a report.** From the fellow's **Report Start Month** through their **Report End Month**. Both can be typed as "March 2026" or "Mar 2026"; an older full date like "03/01/2026" also works for the start. The Fellows tab header can be "Report Start Month" or the older "Report Start Date". A filled-in Report End Month always wins, even past the End Date, so exceptions can be set by hand. When it's blank, reports run through the month before the fellow's **End Date**.
+
+**The final month** is covered by the fellow's **Accomplishments document** instead of a monthly report. It isn't submitted through the monthly form, so the sync script doesn't see it. It's tracked by the offboarding task "Submitted Accomplishments document": ticked means submitted, with no late state. Staff can tick it from the Offboarding tab or with **Mark as submitted** on the Reports tab; both update the same task. It appears as the last row of the Reports tab, for the End Date's month, when that month comes after the last report month. Whether it counts toward the streak and gift cards is set by `ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK` in `lib/helpers.ts` (currently off). Reports logged for months outside the schedule still show on the Reports tab, labeled "Outside schedule", and don't count.
+
 - 3 consecutive on-time submissions → $50 restaurant gift card
 - 2+ missed reports → reimbursements paused
 

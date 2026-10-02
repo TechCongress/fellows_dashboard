@@ -232,7 +232,8 @@ export async function fetchFellows(): Promise<Fellow[]> {
     education: r['Education'] || '',
     notes: r['Notes'] || '',
     requires_monthly_reports: toBool(r['Requires Monthly Reports']),
-    report_start_date: r['Report Start Date'] || '',
+    // "Report Start Month" is the current header; "Report Start Date" is the old one.
+    report_start_date: r['Report Start Month'] || r['Report Start Date'] || '',
     report_end_month: r['Report End Month'] || '',
     onboarding_completed: r['Onboarding Completed Tasks'] || '',
     offboarding_completed: r['Offboarding Completed Tasks'] || '',
@@ -254,7 +255,8 @@ const FELLOW_COLUMNS: [string, keyof Fellow][] = [
   ['Chamber', 'chamber'], ['Cohort', 'cohort'], ['Status', 'status'],
   ['Start Date', 'start_date'], ['End Date', 'end_date'], ['Last Check-in', 'last_check_in'],
   ['Education', 'education'], ['Notes', 'notes'], ['Requires Monthly Reports', 'requires_monthly_reports'],
-  ['Report Start Date', 'report_start_date'], ['Report End Month', 'report_end_month'],
+  // Both names for the same field: writes go to whichever header the tab has.
+  ['Report Start Month', 'report_start_date'], ['Report Start Date', 'report_start_date'], ['Report End Month', 'report_end_month'],
   ['Onboarding Completed Tasks', 'onboarding_completed'], ['Offboarding Completed Tasks', 'offboarding_completed'],
 ];
 

@@ -1,7 +1,7 @@
 import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchStatusReports, logStatusReport, deleteStatusReport, fetchFellows } from '@/lib/sheets';
-import { getRequiredReportMonths, calculateStreak } from '@/lib/helpers';
+import { reportStreak } from '@/lib/helpers';
 import { Resend } from 'resend';
 
 const authed = isAuthed;
@@ -41,8 +41,7 @@ export async function POST(req: NextRequest) {
       try {
         const fellow = (await fetchFellows()).find((f) => f.id === fellow_id);
         const reports = await fetchStatusReports(fellow_id);
-        const requiredMonths = fellow?.report_start_date ? getRequiredReportMonths(fellow) : [];
-        const { streak } = calculateStreak(reports, requiredMonths);
+        const { streak } = fellow ? reportStreak(fellow, reports) : { streak: 0 };
 
         if (streak > 0 && streak % 3 === 0) {
           const giftCards = streak / 3;
