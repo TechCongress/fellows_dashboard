@@ -68,6 +68,12 @@ export async function POST(req: NextRequest) {
           // History, which stays attached because the ID carries over.
           notes: fellow.notes,
           location: body.location || '',
+          // Kept on the Alumni tab, because the Fellows row is deleted below.
+          fellowship_start: fellow.start_date,
+          fellowship_end: fellow.end_date,
+          // Their last check-in is the most recent contact, so the Engagement
+          // tab doesn't open at "No engagement yet".
+          last_engaged: fellow.last_check_in,
           contact: true,
           served_on_hill: true,
           currently_on_hill: false,

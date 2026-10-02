@@ -7,6 +7,7 @@ import { SECTOR_POLICY, GOVERNMENT_BRANCHES, isGovernmentSector } from '@/lib/ca
 import { CareerHistorySection } from '@/components/career-history';
 import { AlumniPathwayTab } from '@/components/pathway-ui';
 import { AlumniEngagementTab } from '@/components/alumni-engagement';
+import { AlumniFellowshipRecordTab } from '@/components/alumni-fellowship-record';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -188,7 +189,7 @@ function AlumniCard({ alumni, onView, onEdit }: { alumni: Alumni; onView: () => 
 // "Background" and "Current Info" were merged into one tab: an alum's current
 // role and sector now live inside the career timeline (the Phase = "Current"
 // entry), so they no longer exist as standalone modal fields.
-type ModalTab = 'contact' | 'fellowship' | 'background' | 'pathway' | 'engagement' | 'accomplishments';
+type ModalTab = 'contact' | 'fellowship' | 'record' | 'background' | 'pathway' | 'engagement' | 'accomplishments';
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -234,6 +235,7 @@ function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alum
   const TABS: { key: ModalTab; label: string }[] = [
     { key: 'contact', label: 'Contact' },
     { key: 'fellowship', label: 'Fellowship' },
+    { key: 'record', label: 'Fellowship Record' },
     { key: 'background', label: 'Background & Career History' },
     { key: 'pathway', label: 'Career Pathway' },
     { key: 'engagement', label: 'Engagement' },
@@ -306,6 +308,7 @@ function AlumniModal({ alumni, onClose, onEdit, onAlumniUpdate }: { alumni: Alum
           {tab === 'pathway' && (
             <AlumniPathwayTab alumni={alumni} onAlumniUpdate={onAlumniUpdate} />
           )}
+          {tab === 'record' && <AlumniFellowshipRecordTab alumni={alumni} />}
           {tab === 'engagement' && <AlumniEngagementTab alumni={alumni} onAlumniUpdate={onAlumniUpdate} />}
           {tab === 'accomplishments' && (
             <div className="space-y-3">
