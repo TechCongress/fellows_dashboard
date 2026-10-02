@@ -77,6 +77,11 @@ export interface Alumni {
   contact: boolean;             // OK to contact?
   linkedin: string;
   last_engaged: string;
+  // From the Alumni tab's Fellowship Start / Fellowship End columns, copied
+  // from the Fellows tab during Move to Alumni. Blank for anyone who moved
+  // before 2026, when those columns were added.
+  fellowship_start: string;
+  fellowship_end: string;
   engagement_notes: string;
   notes: string;
   prior_role: string;           // derived from Career History (last paid Pre-Fellowship role); '' if none entered

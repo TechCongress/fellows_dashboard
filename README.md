@@ -55,6 +55,16 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
   event attendance isn't tracked separately, so events are logged here as
   "Attended event"
 - The old free-text Engagement Notes show as "Earlier notes" on the Engagement tab
+- **Fellowship Record tab** on each alum's profile: a read-only view of what was
+  logged during their fellowship (check-ins, monthly reports with a month-by-month
+  on-time/late/not-submitted strip and final streak, and event attendance). Those
+  rows stay in their own tabs after Move to Alumni, linked by the same ID. Report
+  months are shown from the first to the last logged report, with gaps marked
+  "not submitted"
+- **Move to Alumni** copies the fellow's Start Date and End Date into the Alumni
+  tab's **Fellowship Start** / **Fellowship End** columns, and sets **Last
+  Engaged** to their last check-in. Those columns exist from the 2026 cohort on;
+  earlier alumni show "Dates not recorded"
 - Filter by fellow type, sector, party, chamber, and cohort
 
 ### Events & Attendance

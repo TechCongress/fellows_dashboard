@@ -672,6 +672,8 @@ export async function fetchAlumni(): Promise<Alumni[]> {
       linkedin: r['LinkedIn'] || '',
       last_engaged: r['Last Engaged'] || '',
       engagement_notes: r['Engagement Notes'] || '',
+      fellowship_start: r['Fellowship Start'] || '',
+      fellowship_end: r['Fellowship End'] || '',
       notes: r['Notes'] || '',
       prior_role: roleLabel(inferredPriorRole(history)),
       education: r['Education'] || '',
@@ -850,12 +852,19 @@ async function getAlumniHeaders(): Promise<string[]> {
 export async function createAlumni(data: Partial<Alumni>, keepId?: string): Promise<boolean> {
   const id = keepId || newId();
   const headers = await getAlumniHeaders();
+  const values = alumniDataMap(id, data);
+  // Set once, when the record is created (in practice, by Move to Alumni).
+  // Edits never write these, so a stale edit form can't overwrite them, and
+  // anyone can still correct them by hand in the sheet.
+  if (data.fellowship_start) values['Fellowship Start'] = data.fellowship_start;
+  if (data.fellowship_end) values['Fellowship End'] = data.fellowship_end;
+  if (data.last_engaged) values['Last Engaged'] = data.last_engaged;
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
     range: 'Alumni',
     valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [rowForAppend(headers, alumniDataMap(id, data))] },
+    requestBody: { values: [rowForAppend(headers, values)] },
   });
   return true;
 }
@@ -864,8 +873,8 @@ export async function updateAlumni(id: string, data: Partial<Alumni>): Promise<b
   const located = await locateRow('Alumni', byId(id));
   if (!located) return false;
   // Only the columns alumniDataMap manages are written. Columns it doesn't
-  // (Last Engaged, the retired Current Role / Prior Role / Sector, anything
-  // added by hand) keep their contents — formulas included.
+  // (Last Engaged, Fellowship Start / End, the retired Current Role / Prior
+  // Role / Sector, anything added by hand) keep their contents — formulas included.
   const values = alumniDataMap(id, data);
   delete values['ID'];
   await writeRowCells('Alumni', located, values);
