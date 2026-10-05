@@ -1,5 +1,6 @@
 import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
+import { parseChecklist, serializeChecklist } from '@/lib/helpers';
 import { updateFellowOffboarding } from '@/lib/sheets';
 
 export async function PATCH(req: NextRequest) {
@@ -8,7 +9,8 @@ export async function PATCH(req: NextRequest) {
   }
   try {
     const { id, offboarding_completed } = await req.json();
-    const ok = await updateFellowOffboarding(id, offboarding_completed);
+    // Saved as task ids in checklist order; old position lists are converted.
+    const ok = await updateFellowOffboarding(id, serializeChecklist(parseChecklist(String(offboarding_completed ?? ''), 'offboarding'), 'offboarding'));
     if (!ok) {
       return NextResponse.json(
         { error: 'Not saved: fellow not found, or the offboarding column is missing from the Fellows tab.' },

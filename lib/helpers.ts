@@ -123,9 +123,7 @@ export function getRequiredReportMonths(fellow: Partial<ScheduleInput>): string[
 
 /** Whether the offboarding task for the Accomplishments document is ticked. */
 export function accomplishmentsDocSubmitted(offboardingCompleted: string | undefined): boolean {
-  const i = OFFBOARDING_TASKS.findIndex((t) => t.label === ACCOMPLISHMENTS_TASK_LABEL);
-  if (i === -1) return false;
-  return (offboardingCompleted || '').split(',').map((x) => x.trim()).includes(String(i));
+  return parseChecklist(offboardingCompleted, 'offboarding').has(ACCOMPLISHMENTS_TASK_ID);
 }
 
 /**
@@ -359,17 +357,84 @@ export function dateSortKey(value: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** The offboarding checklist. Moving a fellow to Alumni requires every task to be ticked. */
-export const OFFBOARDING_TASKS: { label: string }[] = [
-  { label: 'Submitted Accomplishments document' },
-  { label: 'Completed exit interview' },
-  { label: 'Confirm final paycheck' },
-  { label: 'Offboard in Rippling' },
-  { label: 'Remove from #current-fellows-plus-tc Slack channel' },
+// ── Onboarding & offboarding checklists ─────────────────────────────────────
+//
+// Each task has a permanent `id`. A fellow's ticked tasks are saved in the
+// Fellows tab as a comma-separated list of those ids, e.g.
+// "accomplishments-doc,exit-interview". Tasks can be added, removed, reordered
+// or reworded freely: change the label, never the id.
+//
+// Cells saved before ids existed hold positions instead ("0,1,3"). Those are
+// read through the LEGACY_*_ORDER lists below, which record the order the
+// tasks had then, and are rewritten with ids the next time they're saved.
+
+export interface ChecklistTask { id: string; label: string; link?: string }
+
+export const ONBOARDING_TASKS: ChecklistTask[] = [
+  { id: 'offer-sent', label: 'Offer sent' },
+  { id: 'offer-accepted', label: 'Offer accepted' },
+  { id: 'rippling-onboard', label: 'Onboard on Rippling' },
+  { id: 'rippling-bank-account', label: 'Confirm bank account added in Rippling' },
+  { id: 'conflict-of-interest', label: 'Confirm Conflict of Interest Policy signed' },
+  { id: 'handbook-signed', label: 'TechCongress Fellowship Handbook signed' },
+  { id: 'slack', label: 'Add to Slack (including Current Fellows channel)' },
+  { id: 'groups-io', label: 'Add to Groups.io' },
+  { id: 'slite', label: 'Add to Slite' },
+  { id: 'pitfellows-group', label: 'Add to Pitfellows Google Group' },
+  { id: 'reimbursement-policies', label: 'Send TechCongress Fellowship Reimbursement Policies' },
+  { id: 'newsletters-reading', label: 'Send list of newsletters to join and reading recs', link: 'https://docs.google.com/document/d/1HJATXWVr2LnOfvgRTCJxGrlhxueu-eekIpVGFEZhu7Y/edit?usp=sharing' },
+  { id: 'placement-intake', label: 'Send Placement Intake Form' },
 ];
 
-/** True when a fellow's saved offboarding string ("0,1,2,3,4") covers every task. */
+/** The offboarding checklist. Moving a fellow to Alumni requires every task to be ticked. */
+export const OFFBOARDING_TASKS: ChecklistTask[] = [
+  { id: 'accomplishments-doc', label: 'Submitted Accomplishments document' },
+  { id: 'exit-interview', label: 'Completed exit interview' },
+  { id: 'final-paycheck', label: 'Confirm final paycheck' },
+  { id: 'rippling-offboard', label: 'Offboard in Rippling' },
+  { id: 'slack-removal', label: 'Remove from #current-fellows-plus-tc Slack channel' },
+];
+
+export const ACCOMPLISHMENTS_TASK_ID = 'accomplishments-doc';
+
+/**
+ * The order tasks had when cells stored positions. Only used to read old
+ * cells. NEVER edit these, even when the task lists above change.
+ */
+const LEGACY_ONBOARDING_ORDER = [
+  'offer-sent', 'offer-accepted', 'rippling-onboard', 'rippling-bank-account', 'conflict-of-interest',
+  'handbook-signed', 'slack', 'groups-io', 'slite', 'pitfellows-group', 'reimbursement-policies',
+  'newsletters-reading', 'placement-intake',
+];
+const LEGACY_OFFBOARDING_ORDER = ['accomplishments-doc', 'exit-interview', 'final-paycheck', 'rippling-offboard', 'slack-removal'];
+
+export type ChecklistKind = 'onboarding' | 'offboarding';
+const checklistTasks = (kind: ChecklistKind) => (kind === 'onboarding' ? ONBOARDING_TASKS : OFFBOARDING_TASKS);
+
+/**
+ * The ticked task ids in a saved cell. Reads ids ("exit-interview") and old
+ * positions ("1") alike. Ids for tasks no longer on the list are dropped.
+ */
+export function parseChecklist(value: string | undefined, kind: ChecklistKind): Set<string> {
+  const legacy = kind === 'onboarding' ? LEGACY_ONBOARDING_ORDER : LEGACY_OFFBOARDING_ORDER;
+  const current = new Set(checklistTasks(kind).map((t) => t.id));
+  const out = new Set<string>();
+  for (const raw of (value || '').split(',')) {
+    const token = raw.trim();
+    if (!token) continue;
+    const id = /^\d+$/.test(token) ? legacy[Number(token)] : token;
+    if (id && current.has(id)) out.add(id);
+  }
+  return out;
+}
+
+/** Ticked ids as a cell value, in checklist order, e.g. "accomplishments-doc,exit-interview". */
+export function serializeChecklist(done: Set<string>, kind: ChecklistKind): string {
+  return checklistTasks(kind).filter((t) => done.has(t.id)).map((t) => t.id).join(',');
+}
+
+/** True when a fellow's saved offboarding cell covers every task. */
 export function offboardingComplete(completed: string | undefined): boolean {
-  const done = new Set((completed || '').split(',').map((x) => x.trim()).filter(Boolean).map(Number));
-  return OFFBOARDING_TASKS.every((_, i) => done.has(i));
+  const done = parseChecklist(completed, 'offboarding');
+  return OFFBOARDING_TASKS.every((t) => done.has(t.id));
 }

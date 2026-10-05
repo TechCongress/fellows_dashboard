@@ -18,6 +18,11 @@ Tracks each onboarding step per fellow with a progress bar and completion badge.
 #### Offboarding checklist (5 tasks)
 Tracks each offboarding step per fellow. The "Move to Alumni" button is gated — it will not proceed until all offboarding tasks are marked complete.
 
+#### How checklists are saved
+Each onboarding and offboarding task has a permanent id (see `ONBOARDING_TASKS` and `OFFBOARDING_TASKS` in `lib/helpers.ts`). The Fellows tab saves a fellow's ticked tasks as a comma-separated list of ids, e.g. `accomplishments-doc,exit-interview`. Tasks can be added, removed, reordered or reworded freely: change a task's label, never its id, and give new tasks a new id.
+
+Cells saved before ids existed hold positions (`0,1,3`) and are still read correctly, through the `LEGACY_*_ORDER` lists, which must never be edited. `scripts/convert-checklist-ids.ts` converts every row at once: run it without `--apply` to preview, then with `--apply` to write, only after the id update is live.
+
 #### Check-ins
 Log and track all fellow check-ins over time (Email, Phone, Zoom, In-person, Slack, Text). Saving a check-in automatically updates the fellow's "Last Check-in" date.
 

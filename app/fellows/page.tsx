@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_LABEL, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
+import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_ID, parseChecklist, serializeChecklist, ONBOARDING_TASKS, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
@@ -141,21 +141,7 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
 }
 
 
-const ONBOARDING_TASKS: { label: string; link?: string }[] = [
-  { label: 'Offer sent' },
-  { label: 'Offer accepted' },
-  { label: 'Onboard on Rippling' },
-  { label: 'Confirm bank account added in Rippling' },
-  { label: 'Confirm Conflict of Interest Policy signed' },
-  { label: 'TechCongress Fellowship Handbook signed' },
-  { label: 'Add to Slack (including Current Fellows channel)' },
-  { label: 'Add to Groups.io' },
-  { label: 'Add to Slite' },
-  { label: 'Add to Pitfellows Google Group' },
-  { label: 'Send TechCongress Fellowship Reimbursement Policies' },
-  { label: 'Send list of newsletters to join and reading recs', link: 'https://docs.google.com/document/d/1HJATXWVr2LnOfvgRTCJxGrlhxueu-eekIpVGFEZhu7Y/edit?usp=sharing' },
-  { label: 'Send Placement Intake Form' },
-];
+// ONBOARDING_TASKS and OFFBOARDING_TASKS live in lib/helpers.ts, each task with a permanent id.
 
 type ModalTab = 'onboarding' | 'contact' | 'placement' | 'background' | 'pathway' | 'reports' | 'checkins' | 'offboarding';
 
@@ -386,18 +372,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   }
 
   // Onboarding state — auto-mark all complete if the fellow has already started
-  const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
+  const allTaskIds = serializeChecklist(new Set(ONBOARDING_TASKS.map(t => t.id)), 'onboarding');
   const isAlreadyStarted = !!fellow.start_date && new Date(fellow.start_date) <= new Date();
-  const initialCompleted = fellow.onboarding_completed ?? (isAlreadyStarted ? allIndices : '');
-  const [completedSet, setCompletedSet] = useState<Set<number>>(() => {
-    if (!initialCompleted) return new Set<number>();
-    return new Set(initialCompleted.split(',').map(Number).filter(n => !isNaN(n)));
-  });
-
-  const [offboardingSet, setOffboardingSet] = useState<Set<number>>(() => {
-    if (!fellow.offboarding_completed) return new Set<number>();
-    return new Set(fellow.offboarding_completed.split(',').map(Number).filter(n => !isNaN(n)));
-  });
+  const initialCompleted = fellow.onboarding_completed ?? (isAlreadyStarted ? allTaskIds : '');
+  // Ticked task ids. Cells saved as positions ("0,1,3") are read too; see parseChecklist.
+  const [completedSet, setCompletedSet] = useState<Set<string>>(() => parseChecklist(initialCompleted, 'onboarding'));
+  const [offboardingSet, setOffboardingSet] = useState<Set<string>>(() => parseChecklist(fellow.offboarding_completed, 'offboarding'));
   const offboardingDone = offboardingSet.size;
   const offboardingTotal = OFFBOARDING_TASKS.length;
   const offboardingPct = Math.round((offboardingDone / offboardingTotal) * 100);
@@ -414,9 +394,9 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
    * checklist goes back to how it was and says so, instead of silently losing
    * the change on the next reload.
    */
-  const saveChecklist = useCallback(async (kind: 'onboarding' | 'offboarding', next: Set<number>, prev: Set<number>) => {
+  const saveChecklist = useCallback(async (kind: 'onboarding' | 'offboarding', next: Set<string>, prev: Set<string>) => {
     const setSet = kind === 'onboarding' ? setCompletedSet : setOffboardingSet;
-    const completedStr = Array.from(next).sort((a, b) => a - b).join(',');
+    const completedStr = serializeChecklist(next, kind);
     setSet(next);
     setChecklistError('');
     try {
@@ -434,15 +414,15 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
     }
   }, [onFellowUpdate]);
 
-  const toggleOffboardingTask = (idx: number) => {
+  const toggleOffboardingTask = (id: string) => {
     const next = new Set(offboardingSet);
-    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    if (next.has(id)) next.delete(id); else next.add(id);
     saveChecklist('offboarding', next, offboardingSet);
   };
 
-  const toggleOnboardingTask = (idx: number) => {
+  const toggleOnboardingTask = (id: string) => {
     const next = new Set(completedSet);
-    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    if (next.has(id)) next.delete(id); else next.add(id);
     saveChecklist('onboarding', next, completedSet);
   };
 
@@ -450,7 +430,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   const requiredMonths = schedule.reportMonths;
   // The checklist as shown right now, so ticking the document task updates
   // its row (and the streak, if the document counts) without a reload.
-  const offboardingStr = useMemo(() => Array.from(offboardingSet).sort((a, b) => a - b).join(','), [offboardingSet]);
+  const offboardingStr = useMemo(() => serializeChecklist(offboardingSet, 'offboarding'), [offboardingSet]);
   const docSubmitted = accomplishmentsDocSubmitted(offboardingStr);
   const streakInfo = useMemo(() => reportStreak({ ...fellow, offboarding_completed: offboardingStr }, reports), [fellow, offboardingStr, reports]);
   // Every month to list: the schedule, plus any logged report outside it, so a
@@ -591,7 +571,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 <button
                   onClick={() => {
                     const allDone = onboardingDone === onboardingTotal;
-                    const next = allDone ? new Set<number>() : new Set(ONBOARDING_TASKS.map((_, i) => i));
+                    const next = allDone ? new Set<string>() : new Set(ONBOARDING_TASKS.map(t => t.id));
                     saveChecklist('onboarding', next, completedSet);
                   }}
                   className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors">
@@ -602,12 +582,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${onboardingPct}%` }} />
               </div>
               <div className="space-y-1.5">
-                {ONBOARDING_TASKS.map((task, idx) => {
-                  const done = completedSet.has(idx);
+                {ONBOARDING_TASKS.map((task) => {
+                  const done = completedSet.has(task.id);
                   return (
-                    <div key={idx} onClick={() => toggleOnboardingTask(idx)}
+                    <div key={task.id} onClick={() => toggleOnboardingTask(task.id)}
                       role="checkbox" aria-checked={done} tabIndex={0}
-                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOnboardingTask(idx); } }}
+                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOnboardingTask(task.id); } }}
                       className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900
                         ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                       <div className={`w-4.5 h-4.5 mt-0.5 flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
@@ -922,10 +902,8 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                           {/* Ticks the same Offboarding task, through the same save, so the two never disagree. */}
                           <button
                             onClick={() => {
-                              const i = OFFBOARDING_TASKS.findIndex(t => t.label === ACCOMPLISHMENTS_TASK_LABEL);
-                              if (i === -1) return;
                               const next = new Set(offboardingSet);
-                              if (docSubmitted) next.delete(i); else next.add(i);
+                              if (docSubmitted) next.delete(ACCOMPLISHMENTS_TASK_ID); else next.add(ACCOMPLISHMENTS_TASK_ID);
                               saveChecklist('offboarding', next, offboardingSet);
                             }}
                             className={docSubmitted
@@ -1044,7 +1022,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 <button
                   onClick={() => {
                     const allDone = offboardingComplete;
-                    const next = allDone ? new Set<number>() : new Set(OFFBOARDING_TASKS.map((_, i) => i));
+                    const next = allDone ? new Set<string>() : new Set(OFFBOARDING_TASKS.map(t => t.id));
                     saveChecklist('offboarding', next, offboardingSet);
                   }}
                   className="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">
@@ -1060,12 +1038,12 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
                 </div>
               )}
               <div className="space-y-1.5">
-                {OFFBOARDING_TASKS.map((task, idx) => {
-                  const done = offboardingSet.has(idx);
+                {OFFBOARDING_TASKS.map((task) => {
+                  const done = offboardingSet.has(task.id);
                   return (
-                    <div key={idx} onClick={() => toggleOffboardingTask(idx)}
+                    <div key={task.id} onClick={() => toggleOffboardingTask(task.id)}
                       role="checkbox" aria-checked={done} tabIndex={0}
-                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOffboardingTask(idx); } }}
+                      onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleOffboardingTask(task.id); } }}
                       className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900
                         ${done ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                       <div className={`flex-shrink-0 rounded flex items-center justify-center text-xs font-bold
@@ -1261,17 +1239,15 @@ export default function FellowsPage() {
   const activeFellows = useMemo(() => fellows.filter(f => !INACTIVE_STATUSES.includes(f.status)), [fellows]);
 
   const stats = useMemo(() => {
-    const allIndices = ONBOARDING_TASKS.map((_, i) => String(i)).join(',');
+    const allTaskIds = serializeChecklist(new Set(ONBOARDING_TASKS.map(t => t.id)), 'onboarding');
     const onboardingIncomplete = activeFellows.filter(f => {
       const isStarted = !!f.start_date && new Date(f.start_date) <= new Date();
-      const raw = f.onboarding_completed ?? (isStarted ? allIndices : '');
+      const raw = f.onboarding_completed ?? (isStarted ? allTaskIds : '');
       if (!raw) return true;
-      const completed = new Set(raw.split(',').map(Number).filter(n => !isNaN(n)));
-      return completed.size < ONBOARDING_TASKS.length;
+      return parseChecklist(raw, 'onboarding').size < ONBOARDING_TASKS.length;
     }).length;
     const offboardingIncomplete = activeFellows.filter(f => {
-      if (!f.offboarding_completed) return false;
-      const completed = new Set(f.offboarding_completed.split(',').map(Number).filter(n => !isNaN(n)));
+      const completed = parseChecklist(f.offboarding_completed, 'offboarding');
       return completed.size > 0 && completed.size < OFFBOARDING_TASKS.length;
     }).length;
     return {
