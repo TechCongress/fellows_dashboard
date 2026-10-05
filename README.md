@@ -80,6 +80,13 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - Quarter is calculated automatically from the event date
 - Record attendance in batches per event
 - **Quarter compliance tracking** — fellows must attend at least one event per quarter; non-compliance is flagged
+  - Each fellow is measured only on required events **for their cohort** (an
+    event with a blank Cohort counts for every cohort; "Jan 2026" and
+    "January 2026" match) that fall **within their Start Date to End Date**, so
+    new cohorts aren't flagged for quarters before they started
+  - Record Attendance lists only fellows in the event's cohort
+  - Tracking covers CIF/SCIF fellows from the January 2026 cohort onward; later
+    cohorts are included automatically, and quarters sort by date across years
 - Attendance tracking scoped to 2026 CIF/SCIF cohort and later (AISF excluded)
 
 ### Accomplishments

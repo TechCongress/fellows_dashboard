@@ -244,8 +244,36 @@ export function isTrackedCohort(cohortStr: string): boolean {
   return false;
 }
 
+/**
+ * Whether an event is for a fellow's cohort. A blank event cohort means every
+ * cohort. "Jan 2026" and "January 2026" are the same cohort (events use both);
+ * a year-only cohort ("2019") matches by year.
+ */
+export function cohortMatches(eventCohort: string | undefined, fellowCohort: string | undefined): boolean {
+  const ev = (eventCohort || '').trim(), fe = (fellowCohort || '').trim();
+  if (!ev) return true;
+  const a = parseMonthValue(ev), b = parseMonthValue(fe);
+  if (a !== null && b !== null) return a === b;
+  const ya = ev.match(/\b(\d{4})\b/)?.[1], yb = fe.match(/\b(\d{4})\b/)?.[1];
+  if (ya && yb) return ya === yb;
+  return ev.toLowerCase() === fe.toLowerCase();
+}
+
+/** "Q3 2026" sorts by year, then quarter. As plain text, "Q1 2027" would sort before "Q2 2026". */
+export function compareQuarters(a: string, b: string): number {
+  const key = (q: string) => { const m = q.match(/Q([1-4])\s+(\d{4})/); return m ? Number(m[2]) * 4 + Number(m[1]) : Number.MAX_SAFE_INTEGER; };
+  return key(a) - key(b) || a.localeCompare(b);
+}
+
+/**
+ * Quarterly compliance: met when a fellow attended at least one required event
+ * in the quarter. Each fellow is only measured against required events that
+ * have already happened, are for their cohort, and fall within their own
+ * Start Date to End Date, so a new cohort isn't marked "not met" for quarters
+ * before it started, and a finished cohort isn't measured on later ones.
+ */
 export function getQuarterCompliance(
-  fellows: { id: string; fellow_type: string }[],
+  fellows: { id: string; fellow_type: string; cohort: string; start_date: string; end_date: string }[],
   events: TCEvent[],
   attendance: EventAttendance[]
 ): Record<string, Record<string, 'met' | 'not_met'>> {
@@ -255,17 +283,23 @@ export function getQuarterCompliance(
     if (!attLookup[rec.event_id]) attLookup[rec.event_id] = {};
     attLookup[rec.event_id][rec.fellow_id] = rec.attended;
   }
-  const quarterEvents: Record<string, string[]> = {};
-  for (const ev of events) {
-    if (!ev.required) continue;
-    const d = parseDate(ev.date);
-    if (!d || d >= today) continue;
-    const q = ev.quarter || dateToQuarter(ev.date);
-    if (q) { if (!quarterEvents[q]) quarterEvents[q] = []; quarterEvents[q].push(ev.id); }
-  }
+  const required = events
+    .filter((ev) => ev.required)
+    .map((ev) => ({ ev, d: parseDate(ev.date), q: ev.quarter || dateToQuarter(ev.date) }))
+    .filter((x): x is { ev: TCEvent; d: Date; q: string } => !!x.d && x.d < today && !!x.q);
+
   const result: Record<string, Record<string, 'met' | 'not_met'>> = {};
   for (const fellow of fellows) {
     if ((fellow.fellow_type || '').includes('AI Security')) continue;
+    const start = fellow.start_date ? parseDate(fellow.start_date) : null;
+    const end = fellow.end_date ? parseDate(fellow.end_date) : null;
+    const quarterEvents: Record<string, string[]> = {};
+    for (const { ev, d, q } of required) {
+      if (!cohortMatches(ev.cohort, fellow.cohort)) continue;
+      if (start && d < start) continue;
+      if (end && d > end) continue;
+      (quarterEvents[q] ||= []).push(ev.id);
+    }
     result[fellow.id] = {};
     for (const [quarter, eventIds] of Object.entries(quarterEvents)) {
       const attended = eventIds.some((eid) => attLookup[eid]?.[fellow.id] === true);
