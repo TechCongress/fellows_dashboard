@@ -548,6 +548,82 @@ export async function addAlumniEngagement(
   return { engagement, lastEngagedUpdated };
 }
 
+type EngagementFields = Pick<AlumniEngagement, 'date' | 'engagement_type' | 'notes' | 'staff_member'>;
+
+/**
+ * Edit one logged engagement. Written RAW, like the original row, so the date
+ * stays in the same text form and the log keeps sorting correctly. Returns
+ * null when there's no such entry. `lastEngaged` is the alum's new Last
+ * Engaged (YYYY-MM-DD, or '' when cleared) when the edit changed it.
+ */
+export async function updateAlumniEngagement(
+  id: string, data: EngagementFields
+): Promise<{ engagement: AlumniEngagement; lastEngaged?: string } | null> {
+  const sheet = await findEngagementSheet();
+  if (!sheet) return null;
+  const located = await locateRow(sheet.name, byId(id, 'Record ID'));
+  if (!located) return null;
+  const alumniId = (located.record['Alumni ID'] || '').trim();
+  const oldDate = parseSheetDate(located.record['Date'] || '');
+  await writeRowCells(sheet.name, located, {
+    'Date': data.date,
+    'Engagement Type': data.engagement_type,
+    'Notes': data.notes,
+    'Staff Member': data.staff_member,
+  }, 'RAW');
+  const engagement: AlumniEngagement = { id, alumni_id: alumniId, alumni_name: located.record['Name'] || '', ...data };
+  const lastEngaged = await syncLastEngaged(sheet.name, alumniId, oldDate);
+  return { engagement, lastEngaged };
+}
+
+/** Delete one logged engagement. Returns null when there's no such entry. */
+export async function deleteAlumniEngagement(id: string): Promise<{ lastEngaged?: string } | null> {
+  const sheet = await findEngagementSheet();
+  if (!sheet) return null;
+  const target = await locateRow(sheet.name, byId(id, 'Record ID'));
+  if (!target) return null;
+  const alumniId = (target.record['Alumni ID'] || '').trim();
+  const oldDate = parseSheetDate(target.record['Date'] || '');
+  if (!(await deleteMatchingRow(sheet.name, byId(id, 'Record ID')))) return null;
+  return { lastEngaged: await syncLastEngaged(sheet.name, alumniId, oldDate) };
+}
+
+/**
+ * Keep the alum's Last Engaged right after an entry is edited or deleted:
+ * - if the newest remaining entry is later than Last Engaged, move it forward;
+ * - if the changed entry was the one Last Engaged came from (same date) and
+ *   it's now gone or earlier, fall back to the newest remaining entry, or
+ *   clear it when none are left.
+ * Otherwise Last Engaged is left alone, including a date typed by hand before
+ * the log existed. Returns the new value when it changed. A failure here is
+ * logged, not thrown: the edit or delete itself already happened.
+ */
+async function syncLastEngaged(sheetName: string, alumniId: string, changedFrom: string | null): Promise<string | undefined> {
+  try {
+    const alum = await locateRow('Alumni', byId(alumniId));
+    if (!alum || !alum.headers.includes('Last Engaged')) return undefined;
+    const current = parseSheetDate(alum.record['Last Engaged'] || '');
+    const rows = await readSheet(sheetName);
+    const headers = rows[1] || [];
+    const aCol = headers.indexOf('Alumni ID'), dCol = headers.indexOf('Date');
+    const newest = rows.slice(2)
+      .filter((r) => (r[aCol] || '').trim() === alumniId)
+      .map((r) => parseSheetDate(r[dCol] || ''))
+      .filter((d): d is string => !!d)
+      .sort()
+      .pop() || '';
+    let next: string | null = null;
+    if (newest && (!current || newest > current)) next = newest;
+    else if (changedFrom && current === changedFrom && newest !== current) next = newest;
+    if (next === null) return undefined;
+    await writeRowCells('Alumni', alum, { 'Last Engaged': next });
+    return next;
+  } catch (err) {
+    console.error(`Could not update Last Engaged for ${alumniId}:`, err);
+    return undefined;
+  }
+}
+
 /** A sheet date shown as M/D/YYYY or YYYY-MM-DD → YYYY-MM-DD, or null. Compared as strings, so no time zone shifts. */
 function parseSheetDate(value: string): string | null {
   const v = value.trim();
@@ -762,18 +838,26 @@ const byId = (id: string, header = 'ID') => (r: Record<string, string>) => (r[he
  * Write the given columns of one row, by header name, in a single request.
  * Headers the tab doesn't have are skipped. Values are formula-escaped.
  */
-async function writeRowCells(sheetName: string, located: LocatedRow, values: Record<string, string>): Promise<void> {
+async function writeRowCells(
+  sheetName: string,
+  located: LocatedRow,
+  values: Record<string, string>,
+  // RAW keeps values exactly as typed (text stays text, nothing is evaluated),
+  // for tabs whose rows are appended RAW, so edits match the original rows.
+  inputOption: 'USER_ENTERED' | 'RAW' = 'USER_ENTERED'
+): Promise<void> {
   const data = Object.entries(values)
     .map(([header, value]) => {
       const col = located.headers.indexOf(header);
-      return col === -1 ? null : { range: `'${sheetName}'!${columnLetter(col)}${located.rowNum}`, values: [[escapeFormula(value)]] };
+      const v = inputOption === 'RAW' ? value : escapeFormula(value);
+      return col === -1 ? null : { range: `'${sheetName}'!${columnLetter(col)}${located.rowNum}`, values: [[v]] };
     })
     .filter((d): d is { range: string; values: string[][] } => d !== null);
   if (data.length === 0) return;
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: getSpreadsheetId(),
-    requestBody: { valueInputOption: 'USER_ENTERED', data },
+    requestBody: { valueInputOption: inputOption, data },
   });
 }
 

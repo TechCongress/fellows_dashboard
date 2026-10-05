@@ -7,7 +7,7 @@
  * addAlumniEngagement), so nobody has to type it by hand.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alumni, AlumniEngagement } from '@/types';
 import { ENGAGEMENT_TYPES, engagementStatus, todayISOET } from '@/lib/helpers';
 
@@ -69,6 +69,13 @@ export function AlumniEngagementTab({ alumni, onAlumniUpdate }: { alumni: Alumni
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  // Set while the form is editing an existing entry rather than logging a new one.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Deleting an entry: two clicks, because there is no undo.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  const formRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,13 +110,70 @@ export function AlumniEngagementTab({ alumni, onAlumniUpdate }: { alumni: Alumni
   function openForm() {
     setForm(blankForm());
     setError('');
+    setEditingId(null);
     setShowForm(true);
   }
+  function openEdit(e: AlumniEngagement) {
+    setForm({ date: toISO(e.date) || e.date, engagement_type: e.engagement_type, staff_member: e.staff_member || rememberedStaff(), notes: e.notes });
+    setEditingId(e.id);
+    setError('');
+    setConfirmDelete(null);
+    setShowForm(true);
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+  }
+
+  /** Mirror a Last Engaged change the server made, so the card, sort and status update without a reload. */
+  function applyLastEngaged(value: unknown) {
+    if (typeof value === 'string' && onAlumniUpdate) onAlumniUpdate({ ...alumni, last_engaged: value });
+  }
+
+  async function deleteEntry(id: string) {
+    setDeleting(id);
+    setDeleteError('');
+    try {
+      const res = await fetch('/api/alumni-engagement', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setDeleteError(data.error || 'Could not delete the entry. Please try again.');
+        return;
+      }
+      setEntries((es) => es.filter((x) => x.id !== id));
+      setConfirmDelete(null);
+      applyLastEngaged(data.lastEngaged);
+    } catch {
+      setDeleteError('Network error. Nothing was deleted.');
+    } finally {
+      setDeleting(null);
+    }
+  }
+
 
   async function save() {
     setSaving(true);
     setError('');
     try {
+      if (editingId) {
+        const res = await fetch('/api/alumni-engagement', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingId, ...form }),
+        });
+        rememberStaff(form.staff_member.trim());
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.engagement) {
+          setError(data.error || 'Could not save the changes. Please try again.');
+          return;
+        }
+        setEntries((es) => es.map((x) => (x.id === editingId ? data.engagement : x)));
+        applyLastEngaged(data.lastEngaged);
+        setEditingId(null);
+        setShowForm(false);
+        return;
+      }
       const res = await fetch('/api/alumni-engagement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -190,7 +254,8 @@ export function AlumniEngagementTab({ alumni, onAlumniUpdate }: { alumni: Alumni
         {loadError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{loadError}</p>}
 
         {showForm && (
-          <div className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <div ref={formRef} className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+            {editingId && <p className="text-xs font-semibold text-gray-600">Editing an entry</p>}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="engagement-date" className="block text-xs font-medium text-gray-600 mb-1">Date</label>
@@ -218,10 +283,10 @@ export function AlumniEngagementTab({ alumni, onAlumniUpdate }: { alumni: Alumni
             </div>
             {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowForm(false)} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => { setShowForm(false); setEditingId(null); }} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
               <button onClick={save} disabled={saving || !form.date || !form.staff_member.trim()}
                 className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-700 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save engagement'}
+                {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save engagement'}
               </button>
             </div>
           </div>
@@ -259,7 +324,26 @@ export function AlumniEngagementTab({ alumni, onAlumniUpdate }: { alumni: Alumni
                 <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">{/^\d{4}-\d{2}-\d{2}$/.test(e.date) ? fmt(e.date) : e.date}</span>
               </div>
               {e.notes && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{e.notes}</p>}
-              {e.staff_member && <p className="text-xs text-gray-400 mt-1">Logged by {e.staff_member}</p>}
+              <div className="flex items-center justify-between gap-3 mt-1">
+                <p className="text-xs text-gray-400">{e.staff_member ? `Logged by ${e.staff_member}` : ''}</p>
+                {confirmDelete === e.id ? (
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Delete this entry?</span>
+                    <button onClick={() => { setConfirmDelete(null); setDeleteError(''); }} disabled={deleting === e.id}
+                      className="text-xs text-gray-500 hover:text-gray-800">Cancel</button>
+                    <button onClick={() => deleteEntry(e.id)} disabled={deleting === e.id}
+                      className="text-xs font-semibold text-red-700 hover:text-red-900 disabled:opacity-50">
+                      {deleting === e.id ? 'Deleting…' : 'Confirm delete'}
+                    </button>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-3">
+                    <button onClick={() => openEdit(e)} className="text-xs text-gray-500 hover:text-gray-900">Edit</button>
+                    <button onClick={() => { setConfirmDelete(e.id); setDeleteError(''); }} className="text-xs text-gray-400 hover:text-red-700">Delete</button>
+                  </span>
+                )}
+              </div>
+              {confirmDelete === e.id && deleteError && <p className="text-xs text-red-700 mt-1">{deleteError}</p>}
             </div>
           ))}
         </div>

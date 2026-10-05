@@ -54,6 +54,10 @@ Track monthly report submissions with on-time/late flags and streak counters. Re
 - **Engagement log**: staff log each touchpoint (date, engagement type, their name, notes)
   with **+ Log engagement**, filterable by Events, Conversations and
   Contributions. Saved to the **Alumni Engagement Log** tab
+- **Edit or delete a logged engagement** with the Edit and Delete links on each
+  entry (delete takes a second click to confirm). If the entry was the one the
+  alum's Last Engaged came from, Last Engaged falls back to their newest
+  remaining entry; an edit that makes an entry newer moves it forward
 - **Last Engaged updates automatically** when an engagement is logged, and only
   ever moves forward. It's no longer typed in the alumni edit form. Alumni
   event attendance isn't tracked separately, so events are logged here as
