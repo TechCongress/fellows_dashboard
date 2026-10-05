@@ -1,15 +1,8 @@
 import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchStatusReports, logStatusReport, deleteStatusReport, fetchFellows } from '@/lib/sheets';
-import { reportStreak } from '@/lib/helpers';
-import { Resend } from 'resend';
+import { fetchStatusReports, logStatusReport, deleteStatusReport } from '@/lib/sheets';
 
 const authed = isAuthed;
-
-/** Escape text for an HTML email body. */
-function esc(text: string): string {
-  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-}
 
 export async function GET(req: NextRequest) {
   if (!await authed()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -33,36 +26,6 @@ export async function POST(req: NextRequest) {
     }
 
     await logStatusReport({ fellow_id, fellow_name, month, late: !!late, date_submitted, notes });
-
-    // ── Streak milestone check ─────────────────────────────────────────────
-    // Only on an on-time submission. The fellow's report window comes from the
-    // Fellows tab, not the request, so a request can't claim a streak.
-    if (!late && process.env.RESEND_API_KEY) {
-      try {
-        const fellow = (await fetchFellows()).find((f) => f.id === fellow_id);
-        const reports = await fetchStatusReports(fellow_id);
-        const { streak } = fellow ? reportStreak(fellow, reports) : { streak: 0 };
-
-        if (streak > 0 && streak % 3 === 0) {
-          const giftCards = streak / 3;
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
-            from: 'TechCongress Dashboard <onboarding@resend.dev>',
-            to: 'hello@techcongress.io',
-            subject: `🎁 ${fellow?.name || fellow_name} has earned a gift card!`,
-            html: `
-              <p>Hi Mya,</p>
-              <p><strong>${esc(fellow?.name || fellow_name)}</strong> just submitted their <strong>${esc(month)}</strong> status report on time, completing <strong>${streak} consecutive on-time submissions</strong>.</p>
-              <p>They have now earned <strong>${giftCards} gift card${giftCards > 1 ? 's' : ''}</strong> total ($${giftCards * 50} in restaurant gift cards).</p>
-              <p>— TechCongress Dashboard</p>
-            `,
-          });
-        }
-      } catch (emailErr) {
-        // Email failure should not fail the whole request
-        console.error('[streak-email]', emailErr);
-      }
-    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

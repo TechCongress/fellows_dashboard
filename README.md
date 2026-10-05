@@ -308,7 +308,6 @@ npm install
 | `AUTH_SECRET` | No | A long random string for signing login cookies. If unset, a key derived from `DASHBOARD_PASSWORD` is used |
 | `ACCOMPLISHMENT_SHEET_ID` | For the Accomplishments page | The Accomplishments workbook's Drive file ID |
 | `FORM_RESPONSES_URL` | For the sync script | The status report Google Form responses sheet |
-| `RESEND_API_KEY` | For streak emails | Resend key for the gift-card alert email |
 | `SHEETS_READ_WINDOW_MS` | No | How long sheet reads are cached, in ms (default 3000) |
 
 Set the same values wherever the dashboard is hosted (e.g. Vercel's Environment Variables).
