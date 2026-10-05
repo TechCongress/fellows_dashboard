@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { TCEvent, EventAttendance, Fellow } from '@/types';
-import { EVENT_TYPES, isPast, isUpcoming, fmtDate, fmtDateLong, eventStatus, dateToQuarter, isTrackedCohort, getQuarterCompliance, INACTIVE_STATUSES } from '@/lib/helpers';
+import { EVENT_TYPES, isPast, isUpcoming, fmtDate, fmtDateLong, eventStatus, dateToQuarter, isTrackedCohort, getQuarterCompliance, cohortMatches, compareQuarters, parseCohortDate, INACTIVE_STATUSES } from '@/lib/helpers';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -123,7 +123,9 @@ function EventForm({ event, onClose, onSaved }: { event?: TCEvent; onClose: () =
 function AttendanceModal({ event, fellows, attendance, onClose, onSaved }: {
   event: TCEvent; fellows: Fellow[]; attendance: EventAttendance[]; onClose: () => void; onSaved: () => void;
 }) {
-  const eligible = fellows.filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status));
+  // Only the event's own cohort: fellows from other cohorts weren't expected
+  // there, and leaving them unchecked would record them as absent.
+  const eligible = fellows.filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status) && cohortMatches(event.cohort, f.cohort));
   const existing = useMemo(() => {
     const m: Record<string, boolean> = {};
     attendance.filter(r => r.event_id === event.id).forEach(r => { m[r.fellow_id] = r.attended; });
@@ -200,7 +202,7 @@ function OverviewTab({ fellows, events, attendance }: { fellows: Fellow[]; event
   const avgPct = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
 
   const eligible = fellows.filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status));
-  const compliance = useMemo(() => getQuarterCompliance(eligible.map(f => ({ id: f.id, fellow_type: f.fellow_type })), events, attendance), [eligible, events, attendance]);
+  const compliance = useMemo(() => getQuarterCompliance(eligible.map(f => ({ id: f.id, fellow_type: f.fellow_type, cohort: f.cohort, start_date: f.start_date, end_date: f.end_date })), events, attendance), [eligible, events, attendance]);
   const atRisk = eligible.filter(f => Object.values(compliance[f.id] || {}).includes('not_met')).length;
   const upcoming = events.filter(e => isUpcoming(e.date)).slice(0, 5);
 
@@ -244,7 +246,7 @@ function OverviewTab({ fellows, events, attendance }: { fellows: Fellow[]; event
               <div className="space-y-2">
                 {eligible.map(f => {
                   const qc = compliance[f.id] || {};
-                  const quarters = Object.keys(qc).sort();
+                  const quarters = Object.keys(qc).sort(compareQuarters);
                   const atRisk = Object.values(qc).includes('not_met');
                   return (
                     <div key={f.id} className="flex items-center justify-between gap-2">
@@ -300,7 +302,7 @@ function EventsTab({ fellows, events, attendance, onEditEvent, onRefresh }: {
   const [attendanceTarget, setAttendanceTarget] = useState<TCEvent | null>(null);
   const [showRoster, setShowRoster] = useState<string | null>(null);
 
-  const quarters = useMemo(() => [...new Set(events.map(e => e.quarter).filter(Boolean))].sort(), [events]);
+  const quarters = useMemo(() => [...new Set(events.map(e => e.quarter).filter(Boolean))].sort(compareQuarters), [events]);
   const eligible = useMemo(() => fellows.filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status)), [fellows]);
 
   const filtered = useMemo(() => {
@@ -408,7 +410,7 @@ function EventsTab({ fellows, events, attendance, onEditEvent, onRefresh }: {
 function FellowsTab({ fellows, events, attendance }: { fellows: Fellow[]; events: TCEvent[]; attendance: EventAttendance[] }) {
   const [openHistory, setOpenHistory] = useState<string | null>(null);
   const eligible = fellows.filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status));
-  const compliance = useMemo(() => getQuarterCompliance(eligible.map(f => ({ id: f.id, fellow_type: f.fellow_type })), events, attendance), [eligible, events, attendance]);
+  const compliance = useMemo(() => getQuarterCompliance(eligible.map(f => ({ id: f.id, fellow_type: f.fellow_type, cohort: f.cohort, start_date: f.start_date, end_date: f.end_date })), events, attendance), [eligible, events, attendance]);
   const attLookup = useMemo(() => {
     const m: Record<string, Record<string, boolean>> = {};
     attendance.forEach(r => { if (!m[r.fellow_id]) m[r.fellow_id] = {}; m[r.fellow_id][r.event_id] = r.attended; });
@@ -416,15 +418,15 @@ function FellowsTab({ fellows, events, attendance }: { fellows: Fellow[]; events
   }, [attendance]);
   const pastEvents = useMemo(() => events.filter(e => isPast(e.date)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [events]);
 
-  if (eligible.length === 0) return <p className="text-sm text-gray-400">No tracked fellows. Fellows must be Jan 2026 CIF/SCIF or a later cohort.</p>;
+  if (eligible.length === 0) return <p className="text-sm text-gray-400">No tracked fellows. Attendance is tracked for CIF/SCIF fellows from the January 2026 cohort onward.</p>;
 
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-6">Tracking attendance for Jan 2026 CIF/SCIF fellows and future cohorts. Each fellow must attend at least one required event per quarter.</p>
+      <p className="text-sm text-gray-500 mb-6">Tracking attendance for CIF/SCIF fellows from the January 2026 cohort onward. Each fellow must attend at least one required event per quarter during their fellowship, counting events for their cohort.</p>
       <div className="grid grid-cols-2 gap-4">
         {eligible.map(f => {
           const qc = compliance[f.id] || {};
-          const quarters = Object.keys(qc).sort();
+          const quarters = Object.keys(qc).sort(compareQuarters);
           const atRisk = Object.values(qc).includes('not_met');
           const fAtt = attLookup[f.id] || {};
           const fellowPastEvents = pastEvents.filter(e => e.id in fAtt);
@@ -496,6 +498,18 @@ export default function EventsPage() {
 
   const logout = useCallback(async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/'; }, []);
 
+  // The cohorts actually being tracked, e.g. "January 2026 and January 2027
+  // CIF/SCIF cohorts", so the header follows new cohorts automatically.
+  const trackedCohortsLabel = useMemo(() => {
+    const cohorts = [...new Set(fellows
+      .filter(f => !f.fellow_type.includes('AI Security') && isTrackedCohort(f.cohort) && !INACTIVE_STATUSES.includes(f.status))
+      .map(f => f.cohort))]
+      .sort((a, b) => parseCohortDate(a).getTime() - parseCohortDate(b).getTime());
+    if (cohorts.length === 0) return 'CIF/SCIF fellows from January 2026 onward';
+    const list = cohorts.length === 1 ? cohorts[0] : `${cohorts.slice(0, -1).join(', ')} and ${cohorts[cohorts.length - 1]}`;
+    return `${list} CIF/SCIF ${cohorts.length === 1 ? 'cohort' : 'cohorts'}`;
+  }, [fellows]);
+
   async function load() {
     setLoadError('');
     try {
@@ -547,7 +561,7 @@ export default function EventsPage() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Events & Attendance</h1>
-          <p className="text-sm text-gray-500 mt-1">Jan 2026 CIF/SCIF cohort · Required: ≥1 event per quarter</p>
+          <p className="text-sm text-gray-500 mt-1">{trackedCohortsLabel} · Required: ≥1 event per quarter</p>
         </div>
 
         <div className="flex border-b border-gray-200 mb-6">
