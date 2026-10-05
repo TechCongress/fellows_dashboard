@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
 import { Fellow, Checkin, AlumniEngagement, StatusReport, Alumni, TCEvent, EventAttendance, Accomplishment, CareerHistoryEntry, CareerPhase, PathwayRecord } from '@/types';
+import { parseChecklist, serializeChecklist, type ChecklistKind } from '@/lib/helpers';
 import { sortHistory, CAREER_PHASES, CAREER_SECTORS, normalizeSector, normalizePathway, MAX_POLICY_AREAS, MAX_TARGET_PATHWAYS, primaryCurrentRole, inferredPriorRole, roleLabel } from '@/lib/career-pathway';
 
 const SCOPES = [
@@ -799,6 +800,41 @@ async function getSheetsClient() {
   ) as typeof client.spreadsheets.batchUpdate;
 
   return client;
+}
+
+// ── One-time checklist conversion ───────────────────────────────────────────
+
+/**
+ * Rewrite every Fellows row's checklist cells from positions ("0,1,3") to
+ * task ids ("accomplishments-doc,exit-interview,rippling-offboard"). Cells
+ * already in ids are left alone. With `apply` false it only reports what it
+ * would change. Run through scripts/convert-checklist-ids.ts.
+ */
+export async function convertChecklistCellsToIds(apply: boolean): Promise<{ rows: number; cellsToChange: number; changed: number; examples: string[] }> {
+  const rows = await readSheet('Fellows');
+  const headers = rows[1] || [];
+  const cols: [number, ChecklistKind][] = [
+    [headers.indexOf('Onboarding Completed Tasks'), 'onboarding'],
+    [headers.indexOf('Offboarding Completed Tasks'), 'offboarding'],
+  ];
+  const data: { range: string; values: string[][] }[] = [];
+  const examples: string[] = [];
+  for (let i = 2; i < rows.length; i++) {
+    for (const [col, kind] of cols) {
+      if (col === -1) continue;
+      const before = (rows[i][col] || '').trim();
+      if (!before) continue;
+      const after = serializeChecklist(parseChecklist(before, kind), kind);
+      if (after === before) continue;
+      data.push({ range: `Fellows!${columnLetter(col)}${i + 1}`, values: [[after]] });
+      if (examples.length < 3) examples.push(`${kind}: "${before}" -> "${after}"`);
+    }
+  }
+  if (apply && data.length) {
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: getSpreadsheetId(), requestBody: { valueInputOption: 'RAW', data } });
+  }
+  return { rows: Math.max(0, rows.length - 2), cellsToChange: data.length, changed: apply ? data.length : 0, examples };
 }
 
 // ── Safe row writes ─────────────────────────────────────────────────────────

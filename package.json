@@ -7,7 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node scripts/check-career-grouping.mjs && node scripts/check-government-branches.mjs && node scripts/check-volunteer-exclusion.mjs"
+    "test": "node scripts/check-career-grouping.mjs && node scripts/check-government-branches.mjs && node scripts/check-volunteer-exclusion.mjs && node scripts/check-checklist-ids.mjs"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
