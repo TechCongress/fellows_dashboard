@@ -28,6 +28,9 @@ export const FELLOW_STATUSES: { name: string; active: boolean; color: { bg: stri
 export const STATUS_OPTIONS = FELLOW_STATUSES.filter(s => s.inDropdowns !== false).map(s => s.name);
 
 /** Statuses that don't count as an active fellow. */
+/** Days since a fellow's last check-in before they're flagged "Needs Check-in". */
+export const CHECKIN_INTERVAL_DAYS = 210;
+
 export const INACTIVE_STATUSES = FELLOW_STATUSES.filter(s => !s.active).map(s => s.name);
 
 /** Badge colors for a status; an unlisted status gets Active's colors. */
@@ -285,16 +288,23 @@ export function dateToQuarter(dateStr: string): string {
   return `Q${q} ${d.getFullYear()}`;
 }
 
+/**
+ * Event attendance is tracked for cohorts starting this month or later
+ * (CIF/SCIF only). Change this one line to move the cutoff; the Events page
+ * text follows it.
+ */
+export const EVENT_TRACKING_START = 'January 2026';
+
 export function isTrackedCohort(cohortStr: string): boolean {
   if (!cohortStr) return false;
-  const cutoff = new Date(2026, 0, 1);
+  const cutoff = parseMonthValue(EVENT_TRACKING_START)!;
+  // "Jan 2026", "January 2026", or the month and year inside a longer label.
   const m = cohortStr.match(/([A-Za-z]+ \d{4})/);
-  if (m) {
-    const d = new Date(`${m[1]} 1`);
-    if (!isNaN(d.getTime())) return d >= cutoff;
-  }
+  const month = m ? parseMonthValue(m[1]) : null;
+  if (month !== null) return month >= cutoff;
+  // A year-only cohort ("2026") counts from the cutoff's year.
   const y = cohortStr.match(/\b(\d{4})\b/);
-  if (y) return parseInt(y[1]) >= 2026;
+  if (y) return parseInt(y[1]) >= Math.floor(cutoff / 12);
   return false;
 }
 
@@ -327,7 +337,7 @@ export function compareQuarters(a: string, b: string): number {
  * before it started, and a finished cohort isn't measured on later ones.
  */
 export function getQuarterCompliance(
-  fellows: { id: string; fellow_type: string; cohort: string; start_date: string; end_date: string }[],
+  fellows: { id: string; cohort: string; start_date: string; end_date: string }[],
   events: TCEvent[],
   attendance: EventAttendance[]
 ): Record<string, Record<string, 'met' | 'not_met'>> {
@@ -344,7 +354,6 @@ export function getQuarterCompliance(
 
   const result: Record<string, Record<string, 'met' | 'not_met'>> = {};
   for (const fellow of fellows) {
-    if ((fellow.fellow_type || '').includes('AI Security')) continue;
     const start = fellow.start_date ? parseDate(fellow.start_date) : null;
     const end = fellow.end_date ? parseDate(fellow.end_date) : null;
     const quarterEvents: Record<string, string[]> = {};
