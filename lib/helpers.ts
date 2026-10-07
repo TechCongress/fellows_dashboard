@@ -1,12 +1,39 @@
 import { Fellow, StatusReport, TCEvent, EventAttendance } from '@/types';
 
-export const INACTIVE_STATUSES = [
-  'Withdrew',
-  'Alumni',
-  'Offboarded',
-  'Verbal Acceptance/Sent Contract',
-  'Signed Contract/Pre-Orientation',
+/**
+ * Every fellow Status, in dropdown order. The Status filter, the Add/Edit
+ * Fellow dropdowns, the badge colors, and who counts as active all come from
+ * here, so adding a status means adding one line.
+ *
+ * - `active: false` leaves fellows with that status out of "All Active", the
+ *   stats, check-in flags and event compliance.
+ * - `inDropdowns: false` keeps a status out of the dropdowns while still
+ *   recognizing it in the Sheet ("Alumni" is from before Move to Alumni
+ *   removed the row instead).
+ *
+ * A status in the Sheet that isn't listed here counts as active.
+ */
+export const FELLOW_STATUSES: { name: string; active: boolean; color: { bg: string; text: string }; inDropdowns?: boolean }[] = [
+  { name: 'Active',                          active: true,  color: { bg: 'bg-green-100',  text: 'text-green-800' } },
+  { name: 'Flagged',                         active: true,  color: { bg: 'bg-yellow-100', text: 'text-yellow-800' } },
+  { name: 'Ending Soon',                     active: true,  color: { bg: 'bg-red-100',    text: 'text-red-800' } },
+  { name: 'Withdrew',                        active: false, color: { bg: 'bg-gray-100',   text: 'text-gray-600' } },
+  { name: 'Offboarded',                      active: false, color: { bg: 'bg-orange-100', text: 'text-orange-700' } },
+  { name: 'Verbal Acceptance/Sent Contract', active: false, color: { bg: 'bg-purple-100', text: 'text-purple-800' } },
+  { name: 'Signed Contract/Pre-Orientation', active: false, color: { bg: 'bg-amber-100',  text: 'text-amber-800' } },
+  { name: 'Alumni',                          active: false, color: { bg: 'bg-gray-100',   text: 'text-gray-600' }, inDropdowns: false },
 ];
+
+/** The statuses staff can pick in the Add/Edit Fellow forms and the Status filter. */
+export const STATUS_OPTIONS = FELLOW_STATUSES.filter(s => s.inDropdowns !== false).map(s => s.name);
+
+/** Statuses that don't count as an active fellow. */
+export const INACTIVE_STATUSES = FELLOW_STATUSES.filter(s => !s.active).map(s => s.name);
+
+/** Badge colors for a status; an unlisted status gets Active's colors. */
+export function statusColor(status: string): { bg: string; text: string } {
+  return (FELLOW_STATUSES.find(s => s.name === status) || FELLOW_STATUSES[0]).color;
+}
 
 export function daysSince(dateStr: string): number {
   if (!dateStr) return 9999;
@@ -27,8 +54,37 @@ export function parseCohortDate(cohortStr: string): Date {
   return new Date(0);
 }
 
-export function isAISF(fellow: Fellow): boolean {
-  return (fellow.fellow_type || '').includes('AI Security');
+/**
+ * Every current fellow type. `value` is what's saved to the Sheet's Fellow
+ * Type column, `label` is what the Add/Edit Fellow dropdowns show, and `badge`
+ * is the short name on fellow cards and the Fellow Type chart. To add a type,
+ * add a line here (and a badge color in TYPE_COLORS / TYPE_HEX in
+ * app/fellows/page.tsx, or it shows in gray).
+ * Alumni keep their own longer list (app/alumni/page.tsx), since past fellows
+ * had program names that are no longer used.
+ */
+export const FELLOW_TYPES = [
+  { value: 'Congressional Innovation Fellow', label: 'CIF', badge: 'CIF' },
+  { value: 'Senior Congressional Innovation Fellow', label: 'SCIF', badge: 'SCIF' },
+];
+
+/**
+ * The full Fellow Type name for a cell that may hold a short form ("CIF",
+ * "SCIF", or "Senior CIF", which the Add Fellow form used to save). Anything
+ * unrecognized is returned as-is.
+ */
+export function normalizeFellowType(raw: string | undefined): string {
+  const t = (raw || '').trim();
+  const k = t.toLowerCase();
+  if (k === 'senior cif') return 'Senior Congressional Innovation Fellow';
+  const match = FELLOW_TYPES.find(o => o.value.toLowerCase() === k || o.label.toLowerCase() === k);
+  return match ? match.value : t;
+}
+
+/** Short name for a fellow's badge and the chart: "SCIF", or the type as written if it isn't in FELLOW_TYPES. */
+export function fellowTypeBadge(raw: string | undefined): string {
+  const full = normalizeFellowType(raw);
+  return FELLOW_TYPES.find(o => o.value === full)?.badge || full;
 }
 
 // ── Monthly report schedule ─────────────────────────────────────────────────
