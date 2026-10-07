@@ -2,25 +2,15 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, daysSince, parseCohortDate, isAISF, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_ID, parseChecklist, serializeChecklist, ONBOARDING_TASKS, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS } from '@/lib/helpers';
+import { INACTIVE_STATUSES, STATUS_OPTIONS, statusColor, daysSince, parseCohortDate, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_ID, parseChecklist, serializeChecklist, ONBOARDING_TASKS, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS, FELLOW_TYPES, normalizeFellowType, fellowTypeBadge } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
 type SortOption = 'Cohort (newest first)' | 'Cohort (oldest first)' | 'Priority (Flagged first)' | 'Name (A–Z)' | 'Name (Z–A)' | 'Last Check-in (oldest first)' | 'Last Check-in (newest first)' | 'End Date (soonest first)' | 'End Date (latest first)';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  Active:                              { bg: 'bg-green-100',  text: 'text-green-800' },
-  Flagged:                             { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-  'Ending Soon':                       { bg: 'bg-red-100',    text: 'text-red-800' },
-  Withdrew:                            { bg: 'bg-gray-100',   text: 'text-gray-600' },
-  Offboarded:                          { bg: 'bg-orange-100', text: 'text-orange-700' },
-  'Verbal Acceptance/Sent Contract':   { bg: 'bg-purple-100', text: 'text-purple-800' },
-  'Signed Contract/Pre-Orientation':   { bg: 'bg-amber-100',  text: 'text-amber-800' },
-};
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+  SCIF:         { bg: 'bg-indigo-100', text: 'text-indigo-800' },
   CIF:          { bg: 'bg-blue-100',   text: 'text-blue-800' },
-  AISF:         { bg: 'bg-cyan-100',   text: 'text-cyan-800' },
 };
 const PARTY_BG: Record<string, string> = {
   Democrat: 'bg-blue-500', Republican: 'bg-red-500', Independent: 'bg-purple-500', 'Institutional Office': 'bg-slate-500',
@@ -32,14 +22,11 @@ const CHAMBER_HEX: Record<string, string> = {
   Senate: '#0891b2', House: '#0d9488', 'Executive Branch': '#94a3b8', Unknown: '#d1d5db',
 };
 const TYPE_HEX: Record<string, string> = {
-  'Senior CIF': '#6366f1', CIF: '#93c5fd', AISF: '#0891b2', Unknown: '#d1d5db',
+  SCIF: '#6366f1', CIF: '#93c5fd', Unknown: '#d1d5db',
 };
 
-function ftLabel(ft: string) {
-  if (ft.includes('Senior')) return 'Senior CIF';
-  if (ft.includes('AI Security')) return 'AISF';
-  return 'CIF';
-}
+// Badge colors for a type not listed above (a new type, or an unusual value in the Sheet).
+const TYPE_COLOR_OTHER = { bg: 'bg-gray-100', text: 'text-gray-700' };
 
 function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bg} ${text}`}>{label}</span>;
@@ -91,11 +78,10 @@ function MiniPie({ data, colors, title }: { data: Record<string, number>; colors
 
 function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => void; onEdit: () => void }) {
   const days = daysSince(fellow.last_check_in);
-  const aisf = isAISF(fellow);
-  const needsCheckin = days > 210 && fellow.status === 'Active' && !aisf;
-  const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
-  const tl = fellow.fellow_type ? ftLabel(fellow.fellow_type) : '';
-  const tc = tl ? TYPE_COLORS[tl] : null;
+  const needsCheckin = days > 210 && fellow.status === 'Active';
+  const sc = statusColor(fellow.status);
+  const tl = fellow.fellow_type ? fellowTypeBadge(fellow.fellow_type) : '';
+  const tc = tl ? TYPE_COLORS[tl] || TYPE_COLOR_OTHER : null;
   // Empty until the "Policy Issue Areas" column exists on the Fellows tab, in
   // which case the row is omitted entirely and the card looks exactly as before.
   const policyAreas = fellow.policy_areas || [];
@@ -112,12 +98,11 @@ function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => 
       </div>
       <div className={`flex flex-wrap gap-1.5 ${policyAreas.length ? 'mb-2' : 'mb-3'}`}>
         {tc && <Badge label={tl} {...tc} />}
-        {fellow.party && !aisf && (
+        {fellow.party && (
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${PARTY_BG[fellow.party] || 'bg-gray-400'}`}>
             {fellow.party === 'Democrat' ? 'D' : fellow.party === 'Republican' ? 'R' : fellow.party === 'Independent' ? 'I' : fellow.party}
           </span>
         )}
-        {aisf && <Badge label="Executive Branch" bg="bg-slate-100" text="text-slate-600" />}
       </div>
       {/* Policy issue areas get their own row so they stay visually distinct
           from status/type/party, and wrap rather than truncate — the tag names
@@ -501,7 +486,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
 
 
   const days = daysSince(fellow.last_check_in);
-  const sc = STATUS_COLORS[fellow.status] || STATUS_COLORS.Active;
+  const sc = statusColor(fellow.status);
 
   const onboardingDone = completedSet.size;
   const onboardingTotal = ONBOARDING_TASKS.length;
@@ -548,8 +533,8 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Badge label={fellow.status} {...sc} />
-            {fellow.fellow_type && <Badge label={ftLabel(fellow.fellow_type)} {...(TYPE_COLORS[ftLabel(fellow.fellow_type)] || { bg: 'bg-gray-100', text: 'text-gray-700' })} />}
-            {fellow.party && !isAISF(fellow) && <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${PARTY_BG[fellow.party] || 'bg-gray-400'}`}>{fellow.party}</span>}
+            {fellow.fellow_type && <Badge label={fellowTypeBadge(fellow.fellow_type)} {...(TYPE_COLORS[fellowTypeBadge(fellow.fellow_type)] || TYPE_COLOR_OTHER)} />}
+            {fellow.party && <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${PARTY_BG[fellow.party] || 'bg-gray-400'}`}>{fellow.party}</span>}
           </div>
         </div>
 
@@ -1160,6 +1145,20 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
   );
 }
 
+type SelectOption = string | { value: string; label: string };
+
+/**
+ * Dropdown options as { value, label }. A saved value that isn't one of the
+ * options (an older or hand-typed Fellow Type, say) is kept as an extra
+ * option, so the dropdown shows what's really in the Sheet instead of
+ * silently displaying the first choice.
+ */
+function selectOptions(options: SelectOption[], current: string) {
+  const list = options.map(o => (typeof o === 'string' ? { value: o, label: o } : o));
+  if (current && !list.some(o => o.value === current)) list.push({ value: current, label: current });
+  return list;
+}
+
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
@@ -1186,7 +1185,7 @@ export default function FellowsPage() {
   // No default Chamber: fellows are added as soon as they accept an offer,
   // before they have a placement — forcing a guess here would just get
   // silently wrong data into the sheet until someone remembers to fix it.
-  const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: 'CIF', party: 'Democrat' });
+  const [addFellowForm, setAddFellowForm] = useState<Partial<Fellow>>({ status: 'Active', fellow_type: FELLOW_TYPES[0].value, party: 'Democrat' });
   const [addFellowSaving, setAddFellowSaving] = useState(false);
   const [addFellowError, setAddFellowError] = useState('');
   const [editFellow, setEditFellow] = useState<Fellow | null>(null);
@@ -1255,7 +1254,7 @@ export default function FellowsPage() {
       active: activeFellows.filter(f => f.status === 'Active').length,
       flagged: activeFellows.filter(f => f.status === 'Flagged').length,
       endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
-      needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active' && !isAISF(f)).length,
+      needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active').length,
       onboardingIncomplete,
       offboardingIncomplete,
     };
@@ -1266,9 +1265,9 @@ export default function FellowsPage() {
     activeFellows.forEach(f => {
       if (f.party) party[f.party] = (party[f.party] || 0) + 1;
       const VALID_CHAMBERS = ['House', 'Senate', 'Executive Branch'];
-      const ch = isAISF(f) ? 'Executive Branch' : (VALID_CHAMBERS.includes(f.chamber) ? f.chamber : 'Unknown');
+      const ch = VALID_CHAMBERS.includes(f.chamber) ? f.chamber : 'Unknown';
       chamber[ch] = (chamber[ch] || 0) + 1;
-      const t = ftLabel(f.fellow_type || '');
+      const t = f.fellow_type ? fellowTypeBadge(f.fellow_type) : 'Unknown';
       type[t] = (type[t] || 0) + 1;
     });
     return { party, chamber, type };
@@ -1285,7 +1284,7 @@ export default function FellowsPage() {
     else list = activeFellows.filter(f => f.status === statusFilter);
 
     if (search) { const q = search.toLowerCase(); list = list.filter(f => f.name.toLowerCase().includes(q) || f.office.toLowerCase().includes(q)); }
-    if (typeFilter !== 'All Types') list = list.filter(f => f.fellow_type === typeFilter);
+    if (typeFilter !== 'All Types') list = list.filter(f => normalizeFellowType(f.fellow_type) === typeFilter);
     if (partyFilter !== 'All Parties') list = list.filter(f => f.party === partyFilter);
     if (chamberFilter !== 'All Chambers') list = list.filter(f => f.chamber === chamberFilter);
     if (cohortFilter !== 'All Cohorts') list = list.filter(f => f.cohort === cohortFilter);
@@ -1364,8 +1363,8 @@ export default function FellowsPage() {
               <div className="grid grid-cols-5 gap-3">
                 <input type="text" placeholder="Search name or office…" value={search} onChange={e => setSearch(e.target.value)}
                   className="col-span-2 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                <Select value={statusFilter} onChange={setStatusFilter} options={['All Active', 'Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']} />
-                <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', 'Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']} />
+                <Select value={statusFilter} onChange={setStatusFilter} options={['All Active', ...STATUS_OPTIONS]} />
+                <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', ...FELLOW_TYPES.map(t => t.value)]} />
                 <Select value={partyFilter} onChange={setPartyFilter} options={['All Parties', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} />
               </div>
               <div className="grid grid-cols-5 gap-3">
@@ -1399,7 +1398,7 @@ export default function FellowsPage() {
       {selectedFellow && <FellowModal fellow={selectedFellow} onClose={() => setSelectedFellow(null)}
         onFellowUpdate={updated => { setFellows(fs => fs.map(f => f.id === updated.id ? updated : f)); setSelectedFellow(updated); }}
         initialTab={modalTab} initialEditSection={modalEditSection}
-        onEditAll={f => { setSelectedFellow(null); setEditFellow(f); setEditFellowForm({ ...f }); setConfirmDeleteFellow(false); setDeleteFellowError(''); }} />}
+        onEditAll={f => { setSelectedFellow(null); setEditFellow(f); setEditFellowForm({ ...f, fellow_type: normalizeFellowType(f.fellow_type) }); setConfirmDeleteFellow(false); setDeleteFellowError(''); }} />}
 
       {editFellow && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -1435,17 +1434,17 @@ export default function FellowsPage() {
                 <p className="px-3 py-2 text-sm text-gray-600">{editFellowForm.last_check_in || '\u2014'} <span className="text-xs text-gray-400">· updates when a check-in is logged</span></p>
               </div>
               {([
-                ['Fellow Type', 'fellow_type', ['Congressional Innovation Fellow', 'Senior Congressional Innovation Fellow', 'AI Security Fellow']],
+                ['Fellow Type', 'fellow_type', FELLOW_TYPES],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
                 ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
-                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']],
-              ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
+                ['Status', 'status', STATUS_OPTIONS],
+              ] as [string, keyof Fellow, SelectOption[]][]).map(([label, field, options]) => (
                 <div key={field}>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
                   <select value={(editFellowForm[field] as string) || ''} onChange={e => setEditFellowForm(f => ({ ...f, [field]: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
                     {field === 'chamber' && <option value="">Not yet placed</option>}
-                    {options.map(o => <option key={o} value={o}>{o}</option>)}
+                    {selectOptions(options, (editFellowForm[field] as string) || '').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               ))}
@@ -1563,17 +1562,17 @@ export default function FellowsPage() {
                 </div>
               ))}
               {([
-                ['Fellow Type', 'fellow_type', ['CIF', 'Senior CIF', 'AI Security Fellow']],
+                ['Fellow Type', 'fellow_type', FELLOW_TYPES],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
                 ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
-                ['Status', 'status', ['Active', 'Flagged', 'Ending Soon', 'Withdrew', 'Offboarded', 'Verbal Acceptance/Sent Contract', 'Signed Contract/Pre-Orientation']],
-              ] as [string, keyof Fellow, string[]][]).map(([label, field, options]) => (
+                ['Status', 'status', STATUS_OPTIONS],
+              ] as [string, keyof Fellow, SelectOption[]][]).map(([label, field, options]) => (
                 <div key={field}>
                   <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
                   <select value={(addFellowForm[field] as string) || ''} onChange={e => setAddFellowForm(f => ({ ...f, [field]: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
                     {field === 'chamber' && <option value="">Not yet placed</option>}
-                    {options.map(o => <option key={o} value={o}>{o}</option>)}
+                    {selectOptions(options, (addFellowForm[field] as string) || '').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               ))}
@@ -1605,7 +1604,7 @@ export default function FellowsPage() {
                   }
                   setShowAddFellow(false);
                   // Same defaults as the initial form: no Chamber (see above).
-                  setAddFellowForm({ status: 'Active', fellow_type: 'CIF', party: 'Democrat' });
+                  setAddFellowForm({ status: 'Active', fellow_type: FELLOW_TYPES[0].value, party: 'Democrat' });
                   getFellows().then(setFellows).catch((err) => console.error('Refresh after add failed:', err));
                 } catch {
                   setAddFellowError('Network error. Please try again.');

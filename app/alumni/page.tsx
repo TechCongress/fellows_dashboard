@@ -50,7 +50,7 @@ function govBranchLabel(sector: string): string {
   return sector.startsWith(prefix) ? sector.slice(prefix.length) : sector;
 }
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  'Senior CIF': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+  SCIF:         { bg: 'bg-indigo-100', text: 'text-indigo-800' },
   CIF:          { bg: 'bg-blue-100',   text: 'text-blue-800' },
   AISF:         { bg: 'bg-cyan-100',   text: 'text-cyan-800' },
   CIS:          { bg: 'bg-amber-100',  text: 'text-amber-800' },
@@ -61,7 +61,7 @@ const PARTY_HEX: Record<string, string> = {
   'Institutional Office': '#64748b', Unknown: '#d1d5db',
 };
 const TYPE_HEX: Record<string, string> = {
-  'Senior CIF': '#6366f1', CIF: '#93c5fd', AISF: '#0891b2',
+  SCIF: '#6366f1', CIF: '#93c5fd', AISF: '#0891b2',
   CIS: '#f59e0b', CDSF: '#10b981', Unknown: '#d1d5db',
 };
 const SECTOR_HEX: Record<string, string> = {
@@ -70,7 +70,7 @@ const SECTOR_HEX: Record<string, string> = {
 };
 
 function ftLabel(ft: string): string {
-  if (ft.includes('Senior')) return 'Senior CIF';
+  if (ft.includes('Senior')) return 'SCIF';
   if (ft.includes('AI Security')) return 'AISF';
   if (ft.includes('Scholar')) return 'CIS';
   if (ft.includes('Digital Service')) return 'CDSF';

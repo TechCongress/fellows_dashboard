@@ -1,7 +1,7 @@
 import { isAuthed } from '@/lib/auth-server';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchFellows, fetchAlumni, createAlumni, deleteFellow } from '@/lib/sheets';
-import { offboardingComplete } from '@/lib/helpers';
+import { offboardingComplete, normalizeFellowType } from '@/lib/helpers';
 
 const authed = isAuthed;
 
@@ -59,7 +59,9 @@ export async function POST(req: NextRequest) {
           phone: fellow.phone,
           linkedin: fellow.linkedin,
           cohort: fellow.cohort,
-          fellow_types: fellow.fellow_type ? [fellow.fellow_type] : [],
+          // Full name ("Senior Congressional Innovation Fellow", not "Senior
+          // CIF"), so the Alumni page's checkboxes, filter and badge match it.
+          fellow_types: fellow.fellow_type ? [normalizeFellowType(fellow.fellow_type)] : [],
           office_served: fellow.office,
           chamber: fellow.chamber,
           party: fellow.party,
