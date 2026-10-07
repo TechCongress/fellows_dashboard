@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Fellow, Checkin, StatusReport } from '@/types';
-import { INACTIVE_STATUSES, STATUS_OPTIONS, statusColor, daysSince, parseCohortDate, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_ID, parseChecklist, serializeChecklist, ONBOARDING_TASKS, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS, FELLOW_TYPES, normalizeFellowType, fellowTypeBadge } from '@/lib/helpers';
+import { INACTIVE_STATUSES, CHECKIN_INTERVAL_DAYS, STATUS_OPTIONS, statusColor, daysSince, parseCohortDate, getReportSchedule, reportStreak, accomplishmentsDocSubmitted, ACCOMPLISHMENTS_TASK_ID, parseChecklist, serializeChecklist, ONBOARDING_TASKS, ACCOMPLISHMENTS_DOC_COUNTS_TOWARD_STREAK, CHECKIN_TYPES, todayISOET, dateSortKey, OFFBOARDING_TASKS, FELLOW_TYPES, normalizeFellowType, fellowTypeBadge } from '@/lib/helpers';
 import { FellowPathwayTab, PolicyAreaChip } from '@/components/pathway-ui';
 import { CareerHistorySection } from '@/components/career-history';
 
@@ -18,8 +18,11 @@ const PARTY_BG: Record<string, string> = {
 const PARTY_HEX: Record<string, string> = {
   Democrat: '#3b82f6', Republican: '#ef4444', Independent: '#8b5cf6', 'Institutional Office': '#64748b', Unknown: '#d1d5db',
 };
+/** Chamber choices in the Add/Edit Fellow and Placement dropdowns. */
+const CHAMBERS = ['House', 'Senate'];
+
 const CHAMBER_HEX: Record<string, string> = {
-  Senate: '#0891b2', House: '#0d9488', 'Executive Branch': '#94a3b8', Unknown: '#d1d5db',
+  Senate: '#0891b2', House: '#0d9488', Unknown: '#d1d5db',
 };
 const TYPE_HEX: Record<string, string> = {
   SCIF: '#6366f1', CIF: '#93c5fd', Unknown: '#d1d5db',
@@ -78,7 +81,7 @@ function MiniPie({ data, colors, title }: { data: Record<string, number>; colors
 
 function FellowCard({ fellow, onView, onEdit }: { fellow: Fellow; onView: () => void; onEdit: () => void }) {
   const days = daysSince(fellow.last_check_in);
-  const needsCheckin = days > 210 && fellow.status === 'Active';
+  const needsCheckin = days > CHECKIN_INTERVAL_DAYS && fellow.status === 'Active';
   const sc = statusColor(fellow.status);
   const tl = fellow.fellow_type ? fellowTypeBadge(fellow.fellow_type) : '';
   const tc = tl ? TYPE_COLORS[tl] || TYPE_COLOR_OTHER : null;
@@ -632,7 +635,7 @@ function FellowModal({ fellow, onClose, onFellowUpdate, initialTab, initialEditS
             editingSection === 'placement' ? (
               <div className="max-w-md space-y-3">
                 <EditRow label="Office"><input type="text" value={sectionForm.office || ''} onChange={e => setSectionForm(f => ({ ...f, office: e.target.value }))} className={editInputClass} /></EditRow>
-                <EditRow label="Chamber"><Select value={sectionForm.chamber || ''} onChange={v => setSectionForm(f => ({ ...f, chamber: v }))} options={['', 'House', 'Senate', 'Executive Branch']} /></EditRow>
+                <EditRow label="Chamber"><Select value={sectionForm.chamber || ''} onChange={v => setSectionForm(f => ({ ...f, chamber: v }))} options={['', ...CHAMBERS]} /></EditRow>
                 <EditRow label="Party"><Select value={sectionForm.party || ''} onChange={v => setSectionForm(f => ({ ...f, party: v }))} options={['Democrat', 'Republican', 'Independent', 'Institutional Office']} /></EditRow>
                 <EditRow label="Supervisor"><input type="text" value={sectionForm.supervisor_email || ''} onChange={e => setSectionForm(f => ({ ...f, supervisor_email: e.target.value }))} className={editInputClass} /></EditRow>
                 <EditRow label="Start Date"><input type="text" value={sectionForm.start_date || ''} onChange={e => setSectionForm(f => ({ ...f, start_date: e.target.value }))} className={editInputClass} /></EditRow>
@@ -1166,7 +1169,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
       {/* An empty-string option has no built-in value attribute otherwise — the
           browser falls back to using its text content, so "" would render with
           no value at all. Explicit value="" keeps it a real, selectable blank. */}
-      {options.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+      {selectOptions(options, value).map(o => <option key={o.value} value={o.value}>{o.label || '—'}</option>)}
     </select>
   );
 }
@@ -1197,7 +1200,7 @@ export default function FellowsPage() {
   const [deleteFellowSaving, setDeleteFellowSaving] = useState(false);
   const [deleteFellowError, setDeleteFellowError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All Active');
+  const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All Types');
   const [partyFilter, setPartyFilter] = useState('All Parties');
   const [chamberFilter, setChamberFilter] = useState('All Chambers');
@@ -1254,7 +1257,7 @@ export default function FellowsPage() {
       active: activeFellows.filter(f => f.status === 'Active').length,
       flagged: activeFellows.filter(f => f.status === 'Flagged').length,
       endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
-      needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > 210 && f.status === 'Active').length,
+      needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > CHECKIN_INTERVAL_DAYS && f.status === 'Active').length,
       onboardingIncomplete,
       offboardingIncomplete,
     };
@@ -1264,8 +1267,9 @@ export default function FellowsPage() {
     const party: Record<string, number> = {}, chamber: Record<string, number> = {}, type: Record<string, number> = {};
     activeFellows.forEach(f => {
       if (f.party) party[f.party] = (party[f.party] || 0) + 1;
-      const VALID_CHAMBERS = ['House', 'Senate', 'Executive Branch'];
-      const ch = VALID_CHAMBERS.includes(f.chamber) ? f.chamber : 'Unknown';
+      // Blank (not yet placed) is "Unknown"; anything else, even a chamber no
+      // longer offered in the dropdowns, gets its own slice.
+      const ch = f.chamber || 'Unknown';
       chamber[ch] = (chamber[ch] || 0) + 1;
       const t = f.fellow_type ? fellowTypeBadge(f.fellow_type) : 'Unknown';
       type[t] = (type[t] || 0) + 1;
@@ -1279,7 +1283,8 @@ export default function FellowsPage() {
 
   const filtered = useMemo(() => {
     let list: Fellow[];
-    if (statusFilter === 'All Active') list = [...activeFellows];
+    if (statusFilter === 'All') list = [...fellows];
+    else if (statusFilter === 'All Active') list = [...activeFellows];
     else if (INACTIVE_STATUSES.includes(statusFilter)) list = fellows.filter(f => f.status === statusFilter);
     else list = activeFellows.filter(f => f.status === statusFilter);
 
@@ -1363,7 +1368,7 @@ export default function FellowsPage() {
               <div className="grid grid-cols-5 gap-3">
                 <input type="text" placeholder="Search name or office…" value={search} onChange={e => setSearch(e.target.value)}
                   className="col-span-2 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
-                <Select value={statusFilter} onChange={setStatusFilter} options={['All Active', ...STATUS_OPTIONS]} />
+                <Select value={statusFilter} onChange={setStatusFilter} options={['All', 'All Active', ...STATUS_OPTIONS]} />
                 <Select value={typeFilter} onChange={setTypeFilter} options={['All Types', ...FELLOW_TYPES.map(t => t.value)]} />
                 <Select value={partyFilter} onChange={setPartyFilter} options={['All Parties', 'Democrat', 'Republican', 'Independent', 'Institutional Office']} />
               </div>
@@ -1375,7 +1380,9 @@ export default function FellowsPage() {
             </div>
 
             <p className="text-xs text-gray-400 mb-4">
-              {INACTIVE_STATUSES.includes(statusFilter)
+              {statusFilter === 'All'
+                ? `Showing ${filtered.length} of ${fellows.length} fellows`
+                : INACTIVE_STATUSES.includes(statusFilter)
                 ? `Showing ${filtered.length} fellow(s) — ${statusFilter}`
                 : `Showing ${filtered.length} of ${stats.total} active fellows`}
             </p>
@@ -1436,7 +1443,7 @@ export default function FellowsPage() {
               {([
                 ['Fellow Type', 'fellow_type', FELLOW_TYPES],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
-                ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
+                ['Chamber', 'chamber', CHAMBERS],
                 ['Status', 'status', STATUS_OPTIONS],
               ] as [string, keyof Fellow, SelectOption[]][]).map(([label, field, options]) => (
                 <div key={field}>
@@ -1564,7 +1571,7 @@ export default function FellowsPage() {
               {([
                 ['Fellow Type', 'fellow_type', FELLOW_TYPES],
                 ['Party', 'party', ['Democrat', 'Republican', 'Independent', 'Institutional Office']],
-                ['Chamber', 'chamber', ['House', 'Senate', 'Executive Branch']],
+                ['Chamber', 'chamber', CHAMBERS],
                 ['Status', 'status', STATUS_OPTIONS],
               ] as [string, keyof Fellow, SelectOption[]][]).map(([label, field, options]) => (
                 <div key={field}>
