@@ -8,9 +8,9 @@ An internal staff tool for monitoring and managing TechCongress fellows througho
 
 ### Current Fellows
 - **Fellow profiles** — Add, edit, and view fellows with fields for contact info, placement details, background, and notes
-- **Status tracking** — Fellows can be marked Active, Flagged, Ending Soon, or Withdrawn; withdrawn fellows are excluded from stats and charts
+- **Status tracking** — Statuses are set in `FELLOW_STATUSES` (lib/helpers.ts). Active, Flagged and Offboarding count as active fellows; Withdrew and the pre-start statuses are excluded from stats and charts
 - **Filtering & search** — Filter by status, fellow type, party, chamber, and cohort; search by name, office, or email
-- **Dashboard stats** — Header cards show real-time counts for Total Fellows, Active, Onboarding, Offboarding, Needs Check-in, Flagged, and Ending Soon
+- **Dashboard stats** — Header cards show real-time counts for Total Fellows, Active, Onboarding, Offboarding, Needs Check-in, and Flagged
 
 #### Onboarding checklist (13 tasks)
 Tracks each onboarding step per fellow with a progress bar and completion badge. Includes a "Check all" option for bulk completion. State is persisted to a dedicated column in Google Sheets.

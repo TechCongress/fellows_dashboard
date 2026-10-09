@@ -1256,7 +1256,6 @@ export default function FellowsPage() {
       total: activeFellows.length,
       active: activeFellows.filter(f => f.status === 'Active').length,
       flagged: activeFellows.filter(f => f.status === 'Flagged').length,
-      endingSoon: activeFellows.filter(f => f.status === 'Ending Soon').length,
       needsCheckin: activeFellows.filter(f => daysSince(f.last_check_in) > CHECKIN_INTERVAL_DAYS && f.status === 'Active').length,
       onboardingIncomplete,
       offboardingIncomplete,
@@ -1304,7 +1303,7 @@ export default function FellowsPage() {
         case 'End Date (latest first)': return dateSortKey(b.end_date).localeCompare(dateSortKey(a.end_date));
         case 'Cohort (newest first)': return parseCohortDate(b.cohort).getTime() - parseCohortDate(a.cohort).getTime();
         case 'Cohort (oldest first)': return parseCohortDate(a.cohort).getTime() - parseCohortDate(b.cohort).getTime();
-        case 'Priority (Flagged first)': { const p: Record<string, number> = { Flagged: 0, 'Ending Soon': 1, Active: 2 }; return (p[a.status] ?? 3) - (p[b.status] ?? 3); }
+        case 'Priority (Flagged first)': { const p: Record<string, number> = { Flagged: 0, Offboarding: 1, Active: 2 }; return (p[a.status] ?? 3) - (p[b.status] ?? 3); }
         default: return 0;
       }
     });
@@ -1341,7 +1340,7 @@ export default function FellowsPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-7 gap-3 mb-8">
+            <div className="grid grid-cols-6 gap-3 mb-8">
               {[
                 { label: 'Total Fellows', value: stats.total },
                 { label: 'Active', value: stats.active },
@@ -1349,7 +1348,6 @@ export default function FellowsPage() {
                 { label: 'Offboarding', value: stats.offboardingIncomplete },
                 { label: 'Needs Check-in', value: stats.needsCheckin },
                 { label: 'Flagged', value: stats.flagged },
-                { label: 'Ending Soon', value: stats.endingSoon },
               ].map(s => (
                 <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-3">
                   <p className="text-xs text-gray-500 mb-1">{s.label}</p>
