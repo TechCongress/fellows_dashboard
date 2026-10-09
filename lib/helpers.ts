@@ -16,9 +16,8 @@ import { Fellow, StatusReport, TCEvent, EventAttendance } from '@/types';
 export const FELLOW_STATUSES: { name: string; active: boolean; color: { bg: string; text: string }; inDropdowns?: boolean }[] = [
   { name: 'Active',                          active: true,  color: { bg: 'bg-green-100',  text: 'text-green-800' } },
   { name: 'Flagged',                         active: true,  color: { bg: 'bg-yellow-100', text: 'text-yellow-800' } },
-  { name: 'Ending Soon',                     active: true,  color: { bg: 'bg-red-100',    text: 'text-red-800' } },
+  { name: 'Offboarding',                     active: true,  color: { bg: 'bg-orange-100', text: 'text-orange-700' } },
   { name: 'Withdrew',                        active: false, color: { bg: 'bg-gray-100',   text: 'text-gray-600' } },
-  { name: 'Offboarded',                      active: false, color: { bg: 'bg-orange-100', text: 'text-orange-700' } },
   { name: 'Verbal Acceptance/Sent Contract', active: false, color: { bg: 'bg-purple-100', text: 'text-purple-800' } },
   { name: 'Signed Contract/Pre-Orientation', active: false, color: { bg: 'bg-amber-100',  text: 'text-amber-800' } },
   { name: 'Alumni',                          active: false, color: { bg: 'bg-gray-100',   text: 'text-gray-600' }, inDropdowns: false },
