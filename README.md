@@ -24,7 +24,7 @@ Each onboarding and offboarding task has a permanent id (see `ONBOARDING_TASKS` 
 Cells saved before ids existed hold positions (`0,1,3`) and are still read correctly, through the `LEGACY_*_ORDER` lists, which must never be edited. `scripts/convert-checklist-ids.ts` converts every row at once: run it without `--apply` to preview, then with `--apply` to write, only after the id update is live.
 
 #### Check-ins
-Log and track all fellow check-ins over time (Email, Phone, Zoom, In-person, Slack, Text). Saving a check-in automatically updates the fellow's "Last Check-in" date.
+Log and track all fellow check-ins over time (Email, Phone, Zoom, In-person, Slack, Text). Saving a check-in automatically updates the fellow's "Last Check-in" date. An Active fellow is flagged "Needs Check-in" after 210 days without one (`CHECKIN_INTERVAL_DAYS`); Flagged and Offboarding fellows aren't flagged.
 
 #### Monthly Status Reports
 Track monthly report submissions with on-time/late flags and streak counters. Reports can be synced automatically from Google Form responses via the `sync_status_reports.py` script, or marked manually from the fellow's modal.
@@ -332,6 +332,34 @@ npm run dev
 `npm test` runs the logic checks in `scripts/`.
 
 Open [http://localhost:3000](http://localhost:3000).
+
+---
+
+## Changing Lists and Settings
+
+Each list and rule is defined once in the code, and every page reads from that one place. To change one, edit the line on a branch, run `npm test`, and merge; Vercel redeploys automatically. No Google Sheet changes are needed.
+
+| Setting | File | What it controls |
+|---|---|---|
+| `FELLOW_TYPES` | `lib/helpers.ts` | Fellow types in the Add/Edit Fellow dropdowns and the type filter. Each has a `value` (the full name saved to the Sheet), a `label` (what the dropdown shows, e.g. "SCIF") and a `badge` (the short name on cards and the chart). |
+| `FELLOW_STATUSES` | `lib/helpers.ts` | Every status, in dropdown order, with `active` and a badge `color`. `active: true` counts the fellow in the stats, check-in flags, report tracking and event compliance. Active, Flagged and Offboarding are active; Withdrew, Verbal Acceptance/Sent Contract and Signed Contract/Pre-Orientation are not. |
+| `CHAMBERS` | `app/fellows/page.tsx` | Chamber choices in the Add/Edit Fellow and Placement dropdowns (House, Senate). |
+| `CHECKIN_TYPES` | `lib/helpers.ts` | Check-in types in the Log Check-in form. |
+| `ENGAGEMENT_TYPES` | `lib/helpers.ts` | Engagement types in the alumni Log engagement form, each in a group (Events, Conversations, Contributions). |
+| `EVENT_TYPES` | `lib/helpers.ts` | Event types in the Add Event form. |
+| `CHECKIN_INTERVAL_DAYS` | `lib/helpers.ts` | Days since the last check-in before an Active fellow is flagged "Needs Check-in" (210). |
+| `EVENT_TRACKING_START` | `lib/helpers.ts` | The first cohort whose event attendance is tracked ("January 2026"). Later cohorts are included automatically. |
+| `ONBOARDING_TASKS` / `OFFBOARDING_TASKS` | `lib/helpers.ts` | Checklist tasks. See "How checklists are saved" above before changing them. |
+| `GRACE_DAYS` | `sync_status_reports.py` | Days into the next month that a late report still counts for the previous month (7). |
+
+Career Pathway lists (policy areas, pathways, sectors, scoring weights) are in `lib/career-pathway.ts`; see the Career Pathway Engine section.
+
+What happens to existing data:
+- **Adding** an option is always safe; it appears in the dropdowns right away.
+- **Renaming** an option doesn't change rows already in the Sheet. They keep the old value, which the dashboard shows as-is (in gray, for badges) until someone updates it.
+- **Removing** an option doesn't delete anything. Rows with that value keep it, and the dropdown still shows it for those fellows so it isn't overwritten.
+- **A new status** must say whether it's active. A status in the Sheet that isn't in `FELLOW_STATUSES` (e.g. a typo) counts as active and shows in green.
+- **A new fellow type** without a color in `TYPE_COLORS` / `TYPE_HEX` (top of `app/fellows/page.tsx`) shows in gray.
 
 ---
 
